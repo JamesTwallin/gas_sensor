@@ -1,0 +1,4 @@
+# Survey logs and rendered videos are data artifacts, not source.
+*.csv
+*.mp4
+!.gitignore

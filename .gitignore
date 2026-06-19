@@ -1,0 +1,44 @@
+# PlatformIO build output and downloaded dependencies
+.pio/
+
+# VS Code workspace settings, but keep the recommended-extensions list so a
+# fresh clone is prompted to install PlatformIO.
+.vscode/*
+!.vscode/extensions.json
+
+# Local Claude Code agent state (settings, memory) -- never publish
+.claude/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+*.mp4
+*.png
+
+# ...but keep the README screenshots (the *.png rule above is for generated maps/plots)
+!docs/images/
+!docs/images/*.png
+
+# Python bytecode cache (from the tools/ scripts)
+__pycache__/
+*.pyc
+
+# Survey log CSVs contain GPS coordinates -- keep them local
+tools/data/
+tools/maps/
+
+# KiCad runtime artefacts: auto-backups, caches, per-user UI state and lock/
+# autosave files. The .kicad_pro/.kicad_sch/.kicad_pcb, the lib-tables and lib/
+# are the real design and stay tracked.
+*-backups/
+fp-info-cache
+*.kicad_prl
+_autosave-*
+*.kicad_sch-bak
+*.kicad_pcb-bak
+*-bak
+*.bak
+~*.lck
+hardware/carrier_board/#auto_saved_files#
+hardware/carrier_board/production/*
+
