@@ -1,0 +1,10 @@
+# Python deps for tools/plot_survey.py (the survey-video renderer).
+# In your miniconda env:  pip install -r tools/requirements.txt
+#
+# imageio-ffmpeg ships a static ffmpeg binary, so you do NOT need ffmpeg on the
+# system PATH -- the script points matplotlib at the bundled one.
+pandas>=1.5
+numpy>=1.23
+matplotlib>=3.6
+imageio-ffmpeg>=0.4.9
+contextily>=1.2.0
