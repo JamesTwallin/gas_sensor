@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import type { AppSettings } from '../core/settings';
-import type { AppController, UiState } from '../app/controller';
+import type { AppController, UiState } from '../controller';
 import { Btn, H2, H3, Hint } from './components';
 import type { Theme } from './theme';
 

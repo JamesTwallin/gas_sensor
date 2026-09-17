@@ -23,8 +23,9 @@ app/
     chartData.ts   chart history + peak-per-column decimation
     simulator.ts   simulated board producing protocol-exact packets
     settings.ts    defaults (warm-up 3 min, baseline 2 min, 2 min / p15, 10 min / 150 mV)
-  src/app/
-    controller.ts  the wiring: BLE/simulator -> core -> UI state, GPS, recording
+  src/controller.ts  the wiring: BLE/simulator -> core -> UI state, GPS, recording
+                     (deliberately not src/app/ — Expo treats that as the
+                      Expo Router routes directory)
   src/services/    BLE scan + link (auto-reconnect), simulated link, GPS,
                    recorder, keep-awake, settings storage
   src/ui/

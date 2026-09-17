@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
-import type { AppController, UiState } from '../app/controller';
+import type { AppController, UiState } from '../controller';
 import type { SurveyFile } from '../services/recorder';
 import { Btn, H2, Hint } from './components';
 import { fmtSize, fmtWhen } from './format';

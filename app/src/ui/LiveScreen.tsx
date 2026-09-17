@@ -2,8 +2,8 @@
 
 import { StyleSheet, Text, View } from 'react-native';
 import { batteryPercent } from '../core/simulator';
-import type { AppController, UiState } from '../app/controller';
-import { LIVE_SPAN_MS } from '../app/controller';
+import type { AppController, UiState } from '../controller';
+import { LIVE_SPAN_MS } from '../controller';
 import { LiveChart, OverviewChart } from './charts';
 import { Legend } from './components';
 import { fmtDuration, signed } from './format';

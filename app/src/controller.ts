@@ -8,9 +8,9 @@
 // per animation frame.
 
 import { AppState, type AppStateStatus } from 'react-native';
-import { ChartBuffer, type ChartPoint } from '../core/chartData';
-import { formatCsvRow, type GpsFix } from '../core/csv';
-import { Processor, ledColour, type ProcessorOutput } from '../core/processor';
+import { ChartBuffer, type ChartPoint } from './core/chartData';
+import { formatCsvRow, type GpsFix } from './core/csv';
+import { Processor, ledColour, type ProcessorOutput } from './core/processor';
 import {
   DEFAULT_INFO,
   encodeIdentify,
@@ -19,17 +19,17 @@ import {
   parseSample,
   type DeviceInfo,
   type Sample,
-} from '../core/protocol';
-import { rsOhm, vrlFromTap } from '../core/sensor';
-import type { AppSettings } from '../core/settings';
-import { scanForSensors, type ScanHandle } from '../services/ble';
-import { BleDeviceLink } from '../services/bleDevice';
-import type { DeviceLink, LinkHandlers, LinkStatus, ScannedDevice } from '../services/device';
-import { GpsService, type GpsStatus } from '../services/gps';
-import { setKeepAwake } from '../services/keepAwake';
-import { Recorder, type SurveyFile } from '../services/recorder';
-import { saveSettings } from '../services/settingsStore';
-import { SimDeviceLink } from '../services/simDevice';
+} from './core/protocol';
+import { rsOhm, vrlFromTap } from './core/sensor';
+import type { AppSettings } from './core/settings';
+import { scanForSensors, type ScanHandle } from './services/ble';
+import { BleDeviceLink } from './services/bleDevice';
+import type { DeviceLink, LinkHandlers, LinkStatus, ScannedDevice } from './services/device';
+import { GpsService, type GpsStatus } from './services/gps';
+import { setKeepAwake } from './services/keepAwake';
+import { Recorder, type SurveyFile } from './services/recorder';
+import { saveSettings } from './services/settingsStore';
+import { SimDeviceLink } from './services/simDevice';
 
 export const LIVE_SPAN_MS = 60_000;
 

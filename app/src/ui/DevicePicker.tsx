@@ -2,7 +2,7 @@
 // does not, so this modal is the picker: live scan results, strongest first.
 
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import type { AppController, UiState } from '../app/controller';
+import type { AppController, UiState } from '../controller';
 import { Btn, H2, Hint } from './components';
 import type { Theme } from './theme';
 

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { AppController } from './src/app/controller';
+import { AppController } from './src/controller';
 import { isFix } from './src/core/csv';
 import type { AppSettings } from './src/core/settings';
 import { batteryPercent } from './src/core/simulator';
