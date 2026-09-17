@@ -26,7 +26,9 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "permissions": ["android.permission.WAKE_LOCK"],
+      "permissions": [
+        "android.permission.WAKE_LOCK"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -48,7 +50,8 @@
           "isAndroidBackgroundLocationEnabled": false
         }
       ],
-      "expo-dev-client"
+      "expo-dev-client",
+      "expo-sharing"
     ]
   }
 }

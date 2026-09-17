@@ -8,5 +8,5 @@
     "resolveJsonModule": true,
     "skipLibCheck": true
   },
-  "include": ["App.tsx", "index.ts", "src", "tests", "*.config.ts"]
+  "include": ["App.tsx", "index.ts", "src", "tests", "*.config.ts", "*.config.mts"]
 }

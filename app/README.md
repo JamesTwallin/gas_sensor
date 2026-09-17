@@ -45,36 +45,38 @@ animation frame.
   anything older — Node 22.11 installs with an `EBADENGINE` warning and then
   fails to start the bundler. EAS Build uses its own Node, so this only affects
   running the dev server locally.
-- An [Expo](https://expo.dev) account, and the EAS CLI: `npm i -g eas-cli`
+- Android Studio + SDK for `expo run:android` (a Mac + Xcode for `run:ios`)
+- **pnpm** — install dependencies with `pnpm install`, not `npm install`.
+  `npm install` stalls indefinitely on this dependency tree on Windows: it
+  creates the ~320 top-level directories in `node_modules/`, writes zero bytes
+  and then sits there with the CPU idle. pnpm installs the same tree in about
+  20 seconds. `.npmrc` pins `node-linker=hoisted`, which Metro and the Expo
+  config plugins need — they resolve modules by walking `node_modules`, so the
+  default symlinked pnpm layout breaks them.
+- Optional, only for cloud builds: an [Expo](https://expo.dev) account and
+  `npm i -g eas-cli`.
 
 ## First-time setup
 
 ```sh
 cd app
-npm install
-eas login          # your Expo account
-eas init           # creates the project on Expo and writes extra.eas.projectId
+pnpm install
 ```
-
-`eas init` is what links this folder to your Expo account; it adds the project ID
-to `app.json`. Commit that change.
 
 ## Running it
 
-BLE needs native code, so **Expo Go will not work for a real board** — you need a
-development build. The simulator, however, runs anywhere.
+BLE needs native code, so **Expo Go will not work with a real board** — the app
+has to be a native build. The simulator, however, runs anywhere.
 
 ```sh
-# 1. Build a dev client once per platform (cloud build, no Android Studio/Xcode needed)
-npm run build:dev:android     # eas build --profile development --platform android
-npm run build:dev:ios         # needs an Apple Developer account for a device build
-
-# 2. Install the artefact EAS gives you, then start the bundler
-npm start                     # expo start --dev-client
+npx expo run:android    # builds the native app, installs it, starts Metro
+npx expo start          # afterwards: just the bundler
 ```
 
-Day to day you only repeat step 2. Rebuild the dev client when native
-dependencies or anything in `app.json` changes.
+`run:android` runs `prebuild` for you, generating `android/` from `app.json`.
+Re-run it when a native dependency or anything in `app.json` changes; the rest of
+the time `expo start` is enough. `npx expo prebuild --clean` regenerates the
+native projects from scratch if they get into a bad state.
 
 ### Without hardware
 
@@ -83,13 +85,18 @@ BOOT, drop the link (tests auto-reconnect), toggle USB and force the heaters off
 Because it touches no native BLE code it also runs in Expo Go (`npm run start:go`)
 and in the browser (`npm run web`), which is the quickest way to work on the UI.
 
-### Local native builds (optional)
+### Cloud builds (optional)
+
+If you would rather not build locally — or need an iOS build without a Mac —
+`eas.json` has development / preview / production profiles:
 
 ```sh
-npx expo prebuild     # generates android/ and ios/ (both are gitignored)
-npm run android       # needs Android Studio + SDK
-npm run ios           # needs a Mac + Xcode
+eas login
+eas init                      # links this folder to your Expo account
+npm run build:dev:android     # eas build --profile development --platform android
 ```
+
+`eas init` writes `extra.eas.projectId` into `app.json`; commit that change.
 
 `android/` and `ios/` are generated, not tracked: `app.json` is the source of
 truth and EAS runs `prebuild` itself.
@@ -97,8 +104,8 @@ truth and EAS runs `prebuild` itself.
 ## Tests and type-checking
 
 ```sh
-npm test         # vitest: src/core + src/ui/chartPaths
-npm run typecheck
+pnpm test         # vitest: src/core + src/ui/chartPaths — 75 tests
+pnpm typecheck
 ```
 
 The tests import only pure modules, so they run in plain node with no React
