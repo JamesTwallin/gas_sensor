@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "CH4 Survey",
+    "slug": "ch4-survey",
+    "version": "0.1.0",
+    "scheme": "ch4survey",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "io.github.jamestwallin.ch4survey",
+      "infoPlist": {
+        "NSBluetoothPeripheralUsageDescription": "CH4 Survey talks to your methane sensor board over Bluetooth Low Energy.",
+        "NSLocationWhenInUseUsageDescription": "CH4 Survey tags each reading with your position so a survey can be plotted on a map.",
+        "UIFileSharingEnabled": true,
+        "LSSupportsOpeningDocumentsInPlace": true
+      }
+    },
+    "android": {
+      "package": "io.github.jamestwallin.ch4survey",
+      "adaptiveIcon": {
+        "backgroundColor": "#111110",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": ["android.permission.WAKE_LOCK"],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "neverForLocation": true,
+          "bluetoothAlwaysPermission": "CH4 Survey talks to your methane sensor board over Bluetooth Low Energy."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "CH4 Survey tags each reading with your position so a survey can be plotted on a map.",
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      "expo-dev-client"
+    ]
+  }
+}
