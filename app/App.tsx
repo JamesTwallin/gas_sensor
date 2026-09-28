@@ -119,8 +119,11 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
   const battery = (() => {
     const s = state.lastSample;
     if (!s || !state.linked) return { icon: 'battery-unknown' as IconName, text: '—' };
-    // No cell fitted: VBAT reads 0 (no ADS1115) or floats well below a LiPo's range.
-    if (s.vbatMv < 3000) return { icon: (s.flags.usbPower ? 'usb-port' : 'battery-unknown') as IconName, text: s.flags.usbPower ? 'USB' : '—' };
+    // On USB the cell voltage is the charger's, not a charge level, and with no
+    // cell fitted the input floats anywhere: just say USB. Battery % is for
+    // battery operation.
+    if (s.flags.usbPower) return { icon: (s.flags.charging ? 'battery-charging' : 'usb-port') as IconName, text: 'USB' };
+    if (s.vbatMv < 3000) return { icon: 'battery-unknown' as IconName, text: '—' };
     const p = batteryPercent(s.vbatMv);
     return { icon: batteryIcon(p, s.flags.charging), text: `${p}%` };
   })();
