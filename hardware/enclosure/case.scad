@@ -38,27 +38,27 @@ screw_head = 3.9;       // M2 head counterbore in the lid
 screw_clear = 2.2;      // M2 clearance hole in the lid
 
 /* [Parts on the board] (x, y from the board's top-left corner, KiCad coords) */
-s1 = [54.5, 6.9];       // CH4 sensor can centre
-s2 = [54.5, 17.5];      // LPG sensor can centre
+s1 = [56.5, 6.5];       // CH4 sensor can centre (overhangs the board edge by ~1 mm)
+s2 = [56.5, 18.5];      // LPG sensor can centre
 can_d = 9.4;            // sensor flange diameter (9.2 max) - stays under the lid
 cap_d = 8.3;            // sensor cap diameter (8.1 max) - passes through the collar
 can_h = 13.0;           // can height above the board
-usb = [31.0, 33.0];     // USB-C mouth, bottom edge
+usb = [24.0, 33.0];     // USB-C mouth, bottom edge, beside the module
 usb_w = 10.0;
 usb_h = 4.0;
-sw1 = [31.0, 0.0];      // power slide switch, lever over the top edge
+sw1 = [38.0, 0.0];      // power slide switch, lever over the top edge
 sw1_w = 11.0;
 sw1_h = 4.6;
-bat_conn = [60.0, 28.1];// JST-PH, opening faces the right edge (rev C)
+bat_conn = [25.3, 0.0]; // JST-PH, opening faces the top edge, beside the module
 bat_w = 13.0;
-btn_rst = [21.8, 21.9];
-btn_boot = [21.8, 29.0];
+btn_rst = [34.4, 21.9];
+btn_boot = [34.4, 29.0];
 btn_d = 4.2;            // poke-through hole (press with a pen)
-led = [22.2, 7.0];      // status LED
+led = [31.8, 2.3];      // status LED
 led_d = 3.6;
 led_window = 0.4;       // thin printed diffuser over the LED
-mount = [46.7, 30.8];   // board mounting hole that gets a screw (H1) - see README: now under the cell
-sht = [8.5, 28.0];      // SHT40 - vented top and bottom so it reads outside air
+mount = [56.5, 30.0];   // board mounting hole that gets a screw (H1) - see README: now under the cell
+sht = [6.0, 29.0];      // SHT40 - vented top and bottom so it reads outside air
 
 /* [Derived] */
 cav_x = board_x + 2*board_clear;
@@ -119,9 +119,8 @@ module base() {
         hex_vents(bx(3), by(23), bx(14), by(32), -eps, floor_t + 2*eps);
 
         // Wall louvres at board level: the cell covers most of the floor, so this
-        // is where the air really comes in. Sensor end and SHT40 end. The right
-        // wall below y = 20 is the battery plug opening, so no louvres there.
-        for (y = [4, 10, 16])                               // right end wall
+        // is where the air really comes in. Sensor end and SHT40 end.
+        for (y = [4, 10, 16, 22, 28])                       // right end wall
             translate([out_x - wall - eps, by(y) - 1.5, board_z + 1.2])
                 cube([wall + 2*eps, 3, 4.0]);
         for (y = [8, 16, 24])                               // left end wall (SHT40)
@@ -137,13 +136,13 @@ module base() {
             translate([bx(x) - 1.5, out_y - wall - eps, board_z + 1.2])
                 cube([3, wall + 2*eps, 4.0]);
 
-        // USB-C, power switch, battery plug (right wall) and vent notch
+        // USB-C (bottom wall), power switch and battery plug (both top wall)
         translate([bx(usb[0]) - usb_w/2, out_y - wall - eps, board_z + board_t - 0.6])
             cube([usb_w, wall + 2*eps, usb_h]);
         translate([bx(sw1[0]) - sw1_w/2, -eps, board_z + board_t - 0.8])
             cube([sw1_w, wall + 2*eps, sw1_h]);
-        translate([out_x - wall - eps, by(bat_conn[1]) - bat_w/2, board_z + board_t - 0.6])
-            cube([wall + 2*eps, bat_w, 6.5]);
+        translate([bx(bat_conn[0]) - bat_w/2, -eps, board_z + board_t - 0.6])
+            cube([bat_w, wall + 2*eps, 6.5]);
     }
 
     // lid screw posts in the cavity corners
@@ -233,7 +232,7 @@ module board_mock() {
     for (s = [s1, s2]) color("silver")
         translate([bx(s[0]), by(s[1]), board_z + board_t]) cylinder(h = can_h, d = can_d);
     color("dimgray") translate([bx(usb[0]) - 4.5, by(board_y - 6), board_z + board_t]) cube([9, 7.5, 3.3]);
-    color("white") translate([bx(board_x - 7), by(bat_conn[1]) - 4.6, board_z + board_t]) cube([7, 9.2, 6]);
+    color("white") translate([bx(bat_conn[0]) - 4.6, by(0), board_z + board_t]) cube([9.2, 7, 6]);
     color("black") translate([bx(0), by(0.75), board_z + board_t]) cube([20.1, 15.4, 2.4]);
     color("dimgray") translate([wall + 4, wall + 5, floor_t + 1.2]) cube([60, 35, batt_h - 1.2]);  // battery
 }

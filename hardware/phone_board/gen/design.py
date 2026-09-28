@@ -188,11 +188,11 @@ NETCLASSES = {
     "BoostSW": dict(track=0.35, clearance=0.15, nets=["BOOST_SW"]),
 }
 
-# Battery pin 2 (+) of the edge-rotated J2 to the reverse-protection FET drain (Q1 pad 3).
-BAT_CELL_PTS = [(51.55, 27.1), (50.0, 27.1), (48.45, 28.663), (41.6, 28.663)]
-
 OUTLINE = (0, 0, 60, 33)
 CORNER_R = 2.0
+# Notches milled in from the right edge (x0 = inner end, y0..y1 = width): one between
+# the two sensor cans so each stands in air on three sides.
+NOTCHES = [dict(x0=53.0, y0=11.9, y1=13.1)]
 
 
 def _to5(cx, cy):
@@ -200,148 +200,165 @@ def _to5(cx, cy):
     return (round(cx - 1.796, 3), round(cy + 1.796, 3), 45, "F")
 
 
-# (x, y, rotation, side). ESP32 antenna faces the left edge (its footprint
-# carries the antenna keepout). Heaters stacked at the right end with the
-# battery connector under them, SHT40 on the slotted tongue at the bottom-left,
-# as far from the heaters as the board allows.
-#
-# Rev C is rev B compacted from 66 x 36 to 60 x 33 mm. Every hand-routed block
-# was moved as a rigid unit: the MCU column (module, decoupling, tongue) is 2 mm
-# up, the power/USB column (switch, LDO, boost loop, charger, USB-C) is 2 mm
-# left. Only the free-form parts were re-packed: the ADC, the sensor networks,
-# the battery connector, buttons, test points and mounting holes.
+# (x, y, rotation, side). The board has a business end: the ESP32 (antenna over
+# the left edge) and both power connectors are at the rear, the two Figaro cans
+# stand at the front edge, overhanging it by ~1 mm with a notch between them.
+#   Rear:   USB-C on the bottom edge and the JST-PH on the top edge, both right
+#           beside the module, with the reverse-cell FET next to the JST so the
+#           battery lead and its protection stay together.
+#   Middle: LDO, boost loop (hand-routed, moved rigidly), charger, ADC, buttons.
+#   Front:  cans, their load networks, heater-rail monitor.
+#   SHT40:  on the slotted tongue at the rear-left, copper-free on all layers.
 PLACEMENT = {
     "U5": (9.8, 8.5, 90, "F"),
     "C8": (8.0, 18.6, 0, "F"), "C9": (11.0, 18.6, 0, "F"),
-    "R11": (22.5, 10.0, 90, "F"), "C10": (24.0, 10.0, 90, "F"),
-    "D1": (22.2, 7.0, 0, "F"), "C11": (24.7, 7.0, 90, "F"),
-    # serial/power test pads as a labelled 2 x 2 grid beside the module
-    "TP1": (22.3, 13.4, 0, "F"), "TP2": (24.6, 13.4, 0, "F"),
-    "TP3": (22.3, 15.9, 0, "F"), "TP4": (24.6, 15.9, 0, "F"),
-    # RESET above BOOT in one column between the tongue and the USB-C
-    "SW2": (21.8, 21.9, 0, "F"), "SW3": (21.8, 29.0, 0, "F"), "R12": (17.6, 25.6, 0, "F"),
-    "U7": (8.5, 28.0, 0, "F"), "C15": (10.6, 28.0, 90, "F"),
-    "SW1": (31.0, 1.8, 180, "F"),  # lever overhangs the top edge; pins face inboard
-    "U3": (27.5, 10.5, 0, "F"), "C4": (27.5, 14.0, 0, "F"), "C16": (26.4, 7.6, 0, "F"),
-    "J1": (31.0, 29.3, 0, "F"), "U1": (31.0, 21.2, 0, "F"),
-    "R1": (27.5, 22.5, 90, "F"), "R2": (37.0, 25.5, 90, "F"),
-    "U2": (40.5, 23.5, 0, "F"), "C1": (36.2, 22.0, 0, "F"), "C2": (38.0, 19.3, 0, "F"),
-    "C3": (45.0, 21.1, 0, "F"),
-    "R3": (38.6, 26.6, 0, "F"), "R4": (38.6, 28.2, 0, "F"), "R5": (38.6, 29.8, 0, "F"),
-    "R6": (34.4, 19.0, 0, "F"), "R7": (34.4, 17.6, 0, "F"), "R26": (40.9, 32.2, 0, "F"), "Q1": (41.6, 29.6, 90, "F"), "R27": (29.5, 6.2, 0, "F"),
-    "J2": (54.4, 28.1, 90, "F"), "TP5": (46.5, 26.0, 0, "F"),  # cable leaves through the right edge
-    "U4": (42.5, 8.0, 180, "F"), "L1": (38.8, 8.0, 0, "F"), "C5": (35.0, 8.0, 90, "F"),
-    "C6": (43.0, 11.0, 0, "F"), "C7": (38.8, 11.5, 180, "F"),
-    "R8": (45.5, 7.1, 0, "F"), "R9": (45.5, 8.5, 0, "F"), "R10": (32.5, 11.0, 90, "F"),
-    "TP6": (46.5, 4.9, 0, "F"),
-    # ADC and the sensor networks in one column between the boost and the cans
-    "U6": (45.5, 15.5, 90, "F"), "C12": (47.9, 19.75, 0, "F"),
+    "R11": (22.0, 18.4, 0, "F"), "C10": (24.3, 18.4, 0, "F"),
+    "TP1": (22.0, 13.4, 0, "F"), "TP2": (24.3, 13.4, 0, "F"),
+    "TP3": (22.0, 15.9, 0, "F"), "TP4": (24.3, 15.9, 0, "F"),
+    "U7": (6.0, 29.0, 0, "F"), "C15": (8.2, 29.0, 90, "F"), "R12": (17.0, 23.0, 90, "F"),
+    # rear power connectors and the battery FET
+    "J1": (24.0, 29.3, 0, "F"), "U1": (23.3, 21.2, 0, "F"),
+    "R1": (20.3, 22.5, 90, "F"), "R2": (30.0, 25.5, 90, "F"),
+    "J2": (25.3, 4.9, 180, "F"),  # cable leaves through the top edge
+    "Q1": (31.7, 10.6, 270, "F"), "TP5": (34.1, 6.4, 0, "F"),
+    "D1": (31.8, 2.3, 0, "F"), "C11": (30.6, 5.2, 90, "F"), "R27": (32.1, 5.0, 0, "F"),
+    "SW1": (38.0, 1.8, 180, "F"),  # lever overhangs the top edge; pins face inboard
+    "U3": (27.5, 14.0, 0, "F"), "C4": (27.5, 17.4, 0, "F"), "C16": (30.7, 14.4, 0, "F"),
+    "R10": (34.6, 12.5, 0, "F"), "H2": (28.0, 20.6, 0, "F"),
+    "SW2": (34.4, 21.9, 0, "F"), "SW3": (34.4, 29.0, 0, "F"),
+    # boost loop: rev C block moved 1 mm right
+    "U4": (43.5, 8.0, 180, "F"), "L1": (39.8, 8.0, 0, "F"), "C5": (36.0, 8.0, 90, "F"),
+    "C6": (44.0, 11.0, 0, "F"), "C7": (39.8, 11.5, 180, "F"),
+    "R8": (46.5, 7.1, 0, "F"), "R9": (46.5, 8.5, 0, "F"),
+    # charger
+    "U2": (45.5, 23.5, 0, "F"), "C1": (41.2, 22.0, 0, "F"), "C2": (43.6, 19.6, 0, "F"),
+    "C3": (41.2, 24.2, 0, "F"),  # VBAT cap on the VBAT-pin side (left) of U2
+    "R3": (43.6, 26.6, 0, "F"), "R4": (43.6, 28.2, 0, "F"), "R5": (43.6, 29.8, 0, "F"),
+    "R6": (40.8, 19.0, 0, "F"), "R7": (40.8, 17.6, 0, "F"), "R26": (43.6, 31.4, 0, "F"),
+    # ADC, monitors, pull-ups
+    "U6": (45.5, 15.5, 90, "F"), "C12": (48.0, 15.5, 90, "F"),
     "R13": (39.0, 15.0, 90, "F"), "R14": (37.6, 15.0, 90, "F"), "C13": (36.2, 15.0, 90, "F"),
-    "R15": (45.0, 23.5, 90, "F"), "R16": (46.5, 23.5, 90, "F"), "C14": (48.0, 23.5, 90, "F"),
-    "R17": (41.6, 19.75, 0, "F"), "R18": (45.8, 19.75, 0, "F"), "R19": (43.7, 19.75, 0, "F"),
-    # The TO-5 tabs point left (-x) at the can centre height: keep that lane clear.
-    "S1": _to5(54.5, 6.9), "R20": (46.0, 10.5, 90, "F"), "R21": (47.5, 10.5, 90, "F"),
-    "C20": (49.0, 10.5, 90, "F"), "R22": (45.5, 2.5, 90, "F"),
-    "S2": _to5(54.5, 17.5), "R23": (48.3, 13.3, 90, "F"), "R24": (48.3, 15.3, 90, "F"),
-    "C23": (48.0, 21.7, 0, "F"), "R25": (47.5, 2.5, 90, "F"),
-    "H1": (46.7, 30.8, 0, "F"), "H2": (23.0, 2.6, 0, "F"),
+    "R15": (43.6, 4.2, 0, "F"), "R16": (45.7, 4.2, 0, "F"), "C14": (47.8, 4.2, 0, "F"),
+    "R17": (46.2, 19.9, 0, "F"), "R19": (48.3, 19.9, 0, "F"), "R18": (40.4, 20.2, 0, "F"),
+    "TP6": (48.6, 9.0, 0, "F"),
+    # sensors at the front edge, load networks just inboard of them
+    "S1": _to5(56.5, 6.5), "R20": (49.6, 11.5, 0, "F"), "R21": (49.6, 13.0, 0, "F"),
+    "C20": (49.6, 14.5, 0, "F"), "R22": (49.4, 4.4, 90, "F"),
+    "S2": _to5(56.5, 18.5), "R23": (53.5, 25.0, 0, "F"), "R24": (55.6, 25.0, 0, "F"),
+    "C23": (57.7, 25.0, 0, "F"), "R25": (52.0, 26.6, 0, "F"),
+    "H1": (56.5, 30.0, 0, "F"),
 }
 
 ZONES = [
     dict(net="GND", layers=["In1.Cu"], name="GND plane"),
-    # keep routing 0.35 mm off the SHT40 tongue slot (Freerouting ignores inner cutouts)
+    # keep routing 0.35 mm off the SHT40 tongue slot and the sensor notch (Freerouting ignores cutouts)
     dict(layers=["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"], rule_area=("tracks", "vias"), name="slot keepout h",
-         pts=[(0.65, 21.65), (16.35, 21.65), (16.35, 23.35), (0.65, 23.35)]),
+         pts=[(0.65, 23.65), (13.35, 23.65), (13.35, 25.35), (0.65, 25.35)]),
     dict(layers=["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"], rule_area=("tracks", "vias"), name="slot keepout v",
-         pts=[(14.65, 21.65), (16.35, 21.65), (16.35, 29.35), (14.65, 29.35)]),
+         pts=[(11.65, 23.65), (13.35, 23.65), (13.35, 30.85), (11.65, 30.85)]),
+    dict(layers=["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"], rule_area=("tracks", "vias"), name="notch keepout",
+         pts=[(52.65, 11.55), (60.0, 11.55), (60.0, 13.45), (52.65, 13.45)]),
+    # The whole tongue and its neck carry no copper pour on any layer: copper is
+    # what conducts board heat into the SHT40. Only its four tracks cross the neck.
+    dict(layers=["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"], rule_area=("fills",), name="SHT40 tongue no-copper",
+         pts=[(0.0, 23.65), (13.35, 23.65), (13.35, 33.0), (0.0, 33.0)]),
 ]
-ZONES.append(dict(layers=["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"], rule_area=("fills",), name="SHT40 no-copper",
-                  pts=[(7.2, 26.7), (9.8, 26.7), (9.8, 29.3), (7.2, 29.3)]))  # Sensirion: no copper under the sensor
-# Layers Freerouting may not route signals on (kept as solid planes).
 PLANE_LAYERS = ["In1.Cu"]
-# Poured after routing so Freerouting can use F/In2/B for signals.
 POST_ROUTE_ZONES = [dict(net="GND", layers=["F.Cu", "In2.Cu", "B.Cu"], name="GND fill")]
-# 1 mm L-shaped slot that cuts the SHT40 tongue free on two sides (closed polygon).
-SLOTS = [[(1.0, 22.0), (16.0, 22.0), (16.0, 29.0), (15.0, 29.0), (15.0, 23.0), (1.0, 23.0)]]
-# Switch labels replace their reference designators on the silkscreen.
+# 1 mm L-shaped slot: the tongue (x 0-12, y 25-33) hangs off a 2.5 mm neck at its bottom-right.
+SLOTS = [[(1.0, 24.0), (13.0, 24.0), (13.0, 30.5), (12.0, 30.5), (12.0, 25.0), (1.0, 25.0)]]
 SILK_HIDE_REFS = {"SW2", "SW3"}
 SILK_TEXT = [
-    dict(text="CH4", at=(54.5, 0.9), size=0.8), dict(text="LPG", at=(58.0, 23.1), size=0.8),
-    # the cans hide the front labels once fitted, so repeat them on the back where they are soldered
-    dict(text="CH4", at=(54.5, 6.9), size=1.0, side="B"), dict(text="LPG", at=(54.5, 17.5), size=1.0, side="B"),
-    dict(text="+", at=(49.9, 27.1), size=1.0), dict(text="-", at=(49.9, 29.1), size=1.0), dict(text="ON", at=(36.8, 2.4), size=0.8),
-    dict(text="RST", at=(21.8, 25.5), size=0.8), dict(text="BOOT", at=(21.8, 32.4), size=0.8),
-    dict(text="TX", at=(22.3, 12.0), size=0.6), dict(text="RX", at=(24.6, 12.0), size=0.6),
-    dict(text="GND", at=(22.3, 17.3), size=0.6), dict(text="3V3", at=(24.6, 17.3), size=0.6),
-    dict(text="CH4 detector rev C", at=(31.0, 15.5), size=1.0, side="B"),
+    dict(text="CH4", at=(56.5, 6.5), size=1.0, side="B"), dict(text="LPG", at=(56.5, 18.5), size=1.0, side="B"),
+    dict(text="+", at=(23.2, 8.9), size=1.0), dict(text="-", at=(27.4, 8.9), size=1.0),
+    dict(text="ON", at=(41.8, 5.1), size=0.8),
+    dict(text="RST", at=(34.4, 25.45), size=0.8), dict(text="BOOT", at=(34.4, 32.35), size=0.8),
+    dict(text="TX", at=(22.0, 12.0), size=0.6), dict(text="RX", at=(24.3, 12.0), size=0.6),
+    dict(text="GND", at=(22.0, 17.2), size=0.6), dict(text="3V3", at=(24.3, 17.2), size=0.6),
+    dict(text="CH4 detector rev C", at=(33.0, 14.5), size=1.0, side="B"),
 ]
 
-# Hand-routed boost power loop (locked; Freerouting routes around it).
-# U4 is rotated 180 deg: SW / VOUT / GND pads face the inductor on the left.
+# Battery pin 2 (+) of the top-edge J2 down past its pads to the FET drain (Q1 pad 3).
+BAT_CELL_PTS = [(24.3, 7.75), (24.3, 10.6), (28.4, 10.6), (29.34, 11.54), (31.7, 11.54)]
+
+# Hand-routed tracks (locked; Freerouting routes around them).
 PREROUTE = [
-    dict(net="BOOST_SW", layer="F.Cu", width=0.8, pts=[(40.3, 8.0), (40.9, 8.0)]),
-    dict(net="BOOST_SW", layer="F.Cu", width=0.35, pts=[(40.9, 8.0), (41.788, 8.0)]),
-    dict(net="+5V_HTR", layer="F.Cu", width=0.35, pts=[(41.788, 8.5), (41.788, 9.2)]),
-    dict(net="+5V_HTR", layer="F.Cu", width=0.6, pts=[(41.788, 9.2), (42.05, 9.8), (42.05, 11.0)]),
-    dict(net="GND", layer="F.Cu", width=0.35, pts=[(41.788, 7.5), (41.788, 6.5)]),
-    dict(net="VSYS", layer="F.Cu", width=0.8, pts=[(35.0, 8.775), (37.3, 8.775)]),
-    dict(net="VSYS", layer="F.Cu", width=0.3, pts=[(43.212, 7.5), (43.9, 7.5), (43.9, 6.1)]),
-    dict(net="BOOST_FB", layer="F.Cu", width=0.2, pts=[(43.212, 8.5), (44.99, 8.5)]),
-    dict(net="GND", layer="F.Cu", width=0.4, pts=[(43.95, 11.0), (45.0, 11.0)]),
-    dict(net="GND", layer="F.Cu", width=0.4, pts=[(35.0, 7.225), (34.0, 7.225)]),
-    dict(net="GND", layer="F.Cu", width=0.4, pts=[(37.85, 11.5), (37.85, 12.6)]),
+    # Boost power loop (U4 rotated 180: SW / VOUT / GND pads face the inductor on the left)
+    dict(net="BOOST_SW", layer="F.Cu", width=0.8, pts=[(41.3, 8.0), (41.9, 8.0)]),
+    dict(net="BOOST_SW", layer="F.Cu", width=0.35, pts=[(41.9, 8.0), (42.788, 8.0)]),
+    dict(net="+5V_HTR", layer="F.Cu", width=0.35, pts=[(42.788, 8.5), (42.788, 9.2)]),
+    dict(net="+5V_HTR", layer="F.Cu", width=0.6, pts=[(42.788, 9.2), (43.05, 9.8), (43.05, 11.0)]),
+    dict(net="GND", layer="F.Cu", width=0.35, pts=[(42.788, 7.5), (42.788, 6.5)]),
+    dict(net="VSYS", layer="F.Cu", width=0.8, pts=[(36.0, 8.775), (38.3, 8.775)]),
+    dict(net="VSYS", layer="F.Cu", width=0.3, pts=[(44.212, 7.5), (44.9, 7.5), (44.9, 6.1)]),
+    dict(net="BOOST_FB", layer="F.Cu", width=0.2, pts=[(44.212, 8.5), (45.99, 8.5)]),
+    dict(net="GND", layer="F.Cu", width=0.4, pts=[(44.95, 11.0), (46.0, 11.0)]),
+    dict(net="GND", layer="F.Cu", width=0.4, pts=[(36.0, 7.225), (35.0, 7.225)]),
+    dict(net="GND", layer="F.Cu", width=0.4, pts=[(38.85, 11.5), (38.85, 12.6)]),
     # Boost feedback top (R8) sensed at output cap C6, on B.Cu
-    dict(net="+5V_HTR", layer="F.Cu", width=0.25, pts=[(44.99, 7.1), (44.99, 5.0)]),
-    dict(net="+5V_HTR", layer="F.Cu", width=0.4, pts=[(42.05, 11.0), (42.05, 12.3)]),
-    dict(net="+5V_HTR", layer="B.Cu", width=0.25, pts=[(42.05, 12.3), (42.05, 10.0), (44.99, 7.06), (44.99, 5.0)]),
-    # SHT40 on the slotted tongue: decoupling, I2C out through the neck on B.Cu,
-    # +3V3 in through the neck on F.Cu (the autorouter can't thread the neck).
-    dict(net="+3V3", layer="F.Cu", width=0.25, pts=[(9.2, 28.4), (10.1, 28.4), (10.6, 28.48)]),
-    dict(net="GND", layer="F.Cu", width=0.25, pts=[(9.2, 27.6), (10.1, 27.6), (10.6, 27.52)]),
-    dict(net="GND", layer="F.Cu", width=0.3, pts=[(10.6, 27.52), (10.6, 26.5)]),
-    dict(net="+3V3", layer="F.Cu", width=0.3, pts=[(10.6, 28.48), (12.0, 28.48), (13.5, 32.4), (16.8, 32.4),
-                                                   (16.8, 26.6), (17.09, 25.6)]),
-    dict(net="+3V3", layer="B.Cu", width=0.3, pts=[(16.8, 26.6), (16.8, 20.5), (10.52, 20.5)]),
+    dict(net="+5V_HTR", layer="F.Cu", width=0.25, pts=[(45.99, 7.1), (45.99, 5.0)]),
+    dict(net="+5V_HTR", layer="F.Cu", width=0.4, pts=[(43.05, 11.0), (43.05, 12.3)]),
+    dict(net="+5V_HTR", layer="B.Cu", width=0.25, pts=[(43.05, 12.3), (43.05, 10.0), (45.99, 7.06), (45.99, 5.0)]),
+    # VSYS: inductor input -> via -> B.Cu -> via at the boost VIN stub
+    dict(net="VSYS", layer="F.Cu", width=0.4, pts=[(37.3, 6.1), (38.3, 6.6)]),
+    dict(net="VSYS", layer="B.Cu", width=0.4, pts=[(37.3, 6.1), (37.9, 5.3), (44.3, 5.3), (44.9, 6.1)]),
+    dict(net="+5V_HTR", layer="F.Cu", width=0.6, pts=[(43.05, 11.0), (41.5, 11.5), (40.75, 11.5)]),
+    # Boost EN pad is boxed in by the VIN and FB tracks: escape under the SOT-563 body to a
+    # via between the pad rows (the route rev B/C's autorouter found; locked so it is kept)
+    dict(net="HTR_EN", layer="F.Cu", width=0.2, pts=[(44.212, 8.0), (43.845, 8.0), (43.523, 7.678), (43.523, 7.083)]),
+    # SDA trunk from the module to the ADS1115 on In2 (the middle is too dense for the
+    # autorouter to find this 30 mm path by itself)
+    dict(net="I2C_SDA", layer="F.Cu", width=0.2, pts=[(45.0, 13.3875), (45.0, 12.2), (47.2, 12.2)]),
+    dict(net="I2C_SDA", layer="In2.Cu", width=0.2, pts=[(47.2, 12.2), (47.2, 16.7), (15.75, 16.7)]),
+    # SHT40 tongue: decoupling, then GND and +3V3 through the neck on F.Cu, I2C on B.Cu.
+    # No pour reaches the tongue, so GND is a track like the others.
+    dict(net="+3V3", layer="F.Cu", width=0.25, pts=[(6.7, 29.4), (7.7, 29.4), (8.2, 29.48)]),
+    dict(net="GND", layer="F.Cu", width=0.25, pts=[(6.7, 28.6), (7.7, 28.6), (8.2, 28.52)]),
+    dict(net="+3V3", layer="F.Cu", width=0.3, pts=[(8.2, 29.48), (9.4, 29.48), (10.3, 32.1), (16.8, 32.1),
+                                                   (16.8, 25.0), (17.0, 23.51)]),
+    dict(net="GND", layer="F.Cu", width=0.3, pts=[(8.2, 28.52), (11.0, 28.52), (11.0, 31.3), (13.6, 31.3),
+                                                  (14.2, 30.7), (14.2, 29.8)]),
+    dict(net="+3V3", layer="B.Cu", width=0.3, pts=[(16.8, 25.0), (16.8, 20.5), (10.52, 20.5)]),
     dict(net="+3V3", layer="F.Cu", width=0.3, pts=[(10.52, 20.5), (10.52, 18.6)]),
-    dict(net="I2C_SDA", layer="F.Cu", width=0.2, pts=[(7.8, 27.6), (6.4, 27.6)]),
-    dict(net="I2C_SCL", layer="F.Cu", width=0.2, pts=[(7.8, 28.4), (7.2, 28.4), (7.2, 31.6)]),
-    dict(net="I2C_SDA", layer="B.Cu", width=0.2, pts=[(6.4, 27.6), (6.4, 30.2), (17.6, 30.2), (17.6, 19.5),
-                                                      (15.75, 19.5), (15.75, 16.7)]),
-    dict(net="I2C_SCL", layer="B.Cu", width=0.2, pts=[(7.2, 31.6), (18.6, 31.6), (18.6, 17.9), (16.6, 17.9)]),
+    # leave the SHT40 pads straight outward (its footprint keepout only opens at the pads)
+    dict(net="I2C_SDA", layer="F.Cu", width=0.2, pts=[(5.3, 28.6), (4.9, 28.6), (4.9, 27.4)]),
+    dict(net="I2C_SCL", layer="F.Cu", width=0.2, pts=[(5.3, 29.4), (4.9, 29.4), (4.9, 31.6)]),
+    dict(net="I2C_SDA", layer="B.Cu", width=0.2, pts=[(4.9, 27.4), (4.9, 30.4), (5.8, 31.3), (17.6, 31.3),
+                                                      (17.6, 19.5), (15.75, 19.5), (15.75, 16.7)]),
+    dict(net="I2C_SCL", layer="B.Cu", width=0.2, pts=[(4.9, 31.6), (5.4, 32.1), (18.6, 32.1), (18.6, 17.9),
+                                                      (16.6, 17.9)]),
     dict(net="I2C_SDA", layer="F.Cu", width=0.2, pts=[(15.75, 15.5), (15.75, 16.7)]),
     dict(net="I2C_SCL", layer="F.Cu", width=0.2, pts=[(16.6, 15.5), (16.6, 17.9)]),
-    # VSYS: inductor input -> via -> B.Cu -> via at the boost VIN stub
-    dict(net="VSYS", layer="F.Cu", width=0.4, pts=[(36.3, 6.1), (37.3, 6.6)]),
-    dict(net="VSYS", layer="B.Cu", width=0.4, pts=[(36.3, 6.1), (36.9, 5.3), (43.3, 5.3), (43.9, 6.1)]),
     # Battery: J2 + -> Q1 drain, wide and on one layer (all charge/discharge current)
     dict(net="BAT_CELL", layer="F.Cu", width=0.6, pts=BAT_CELL_PTS),
     # ESP32 3V3 pin -> C8 -> C9 decoupling chain (joins the tongue feed at C9)
     dict(net="+3V3", layer="F.Cu", width=0.3, pts=[(8.1, 15.5), (8.1, 17.2), (7.225, 18.1), (7.225, 18.6)]),
     dict(net="+3V3", layer="F.Cu", width=0.3, pts=[(7.225, 18.6), (7.225, 19.9), (9.9, 19.9), (10.52, 20.5)]),
-    # AP2112K GND pin straight to the plane
-    dict(net="GND", layer="F.Cu", width=0.3, pts=[(26.363, 10.5), (25.2, 10.5)]),
-    # USB ESD diode GND pin likewise (its F.Cu pour island had no via of its own)
-    dict(net="GND", layer="F.Cu", width=0.3, pts=[(29.8625, 21.2), (28.8, 21.2)]),
+    # AP2112K and USB ESD diode GND pins straight to the plane
+    dict(net="GND", layer="F.Cu", width=0.3, pts=[(26.363, 14.0), (25.5, 14.0)]),
+    dict(net="GND", layer="F.Cu", width=0.3, pts=[(22.1625, 21.2), (21.3, 21.2)]),
     # ESP32 corner GND pad 63 straight to a via
     dict(net="GND", layer="F.Cu", width=0.3, pts=[(19.35, 15.5), (20.7, 15.5)]),
-    dict(net="+5V_HTR", layer="F.Cu", width=0.6, pts=[(42.05, 11.0), (40.5, 11.5), (39.75, 11.5)]),
+    # GND pads the pours tend to fence off: charger pin 8, VSYS cap C2, EN cap C10
+    dict(net="GND", layer="F.Cu", width=0.3, pts=[(46.25, 24.938), (46.25, 26.0)]),
+    dict(net="GND", layer="F.Cu", width=0.3, pts=[(44.375, 19.6), (44.375, 20.6)]),
+    dict(net="GND", layer="F.Cu", width=0.3, pts=[(24.81, 18.4), (25.6, 18.4)]),
 ]
 PREROUTE_VIAS = [
-    dict(net="GND", at=(41.788, 6.5)), dict(net="VSYS", at=(43.9, 6.1)), dict(net="GND", at=(45.0, 11.0)),
-    dict(net="GND", at=(34.0, 7.225)), dict(net="GND", at=(37.85, 12.6)), dict(net="GND", at=(20.7, 15.5)),
-    dict(net="+5V_HTR", at=(44.99, 5.0)), dict(net="+5V_HTR", at=(42.05, 12.3)),
-    # SHT40 tongue: GND, I2C escape vias, and pickup vias just past the neck
-    dict(net="GND", at=(10.6, 26.5)), dict(net="GND", at=(6.2, 32.2)),
-    dict(net="I2C_SDA", at=(6.4, 27.6)), dict(net="I2C_SCL", at=(7.2, 31.6)),
+    dict(net="GND", at=(46.25, 26.0)), dict(net="GND", at=(44.375, 20.6)), dict(net="GND", at=(25.6, 18.4)),
+    dict(net="GND", at=(42.788, 6.5)), dict(net="VSYS", at=(44.9, 6.1)), dict(net="GND", at=(46.0, 11.0)),
+    dict(net="GND", at=(35.0, 7.225)), dict(net="GND", at=(38.85, 12.6)), dict(net="GND", at=(20.7, 15.5)),
+    dict(net="+5V_HTR", at=(45.99, 5.0)), dict(net="+5V_HTR", at=(43.05, 12.3)), dict(net="VSYS", at=(37.3, 6.1)),
+    dict(net="HTR_EN", at=(43.523, 7.083)), dict(net="I2C_SDA", at=(47.2, 12.2)),
+    # SHT40 tongue: I2C escape vias on the tongue, GND and +3V3 pickup vias just past the neck
+    dict(net="I2C_SDA", at=(4.9, 27.4)), dict(net="I2C_SCL", at=(4.9, 31.6)),
+    dict(net="GND", at=(14.2, 29.8)), dict(net="+3V3", at=(16.8, 25.0)), dict(net="+3V3", at=(10.52, 20.5)),
     dict(net="I2C_SDA", at=(15.75, 16.7)), dict(net="I2C_SCL", at=(16.6, 17.9)),
-    dict(net="+3V3", at=(16.8, 26.6)), dict(net="+3V3", at=(10.52, 20.5)),
-    dict(net="GND", at=(25.2, 10.5)), dict(net="GND", at=(28.8, 21.2)),
-    # VSYS feed for the boost VIN pin, dropped next to the inductor input
-    dict(net="VSYS", at=(36.3, 6.1)),
+    dict(net="GND", at=(25.5, 14.0)), dict(net="GND", at=(21.3, 21.2)),
     # ESP32 module centre GND pads (the fill can't reach inside the pad ring)
     *[dict(net="GND", at=(x, y), d=0.5, drill=0.2) for x in (11.525, 13.175) for y in (7.675, 9.325)],
     # BQ24073 exposed pad thermal vias
-    dict(net="GND", at=(40.1, 23.1), d=0.5, drill=0.2), dict(net="GND", at=(40.9, 23.9), d=0.5, drill=0.2),
+    dict(net="GND", at=(45.1, 23.1), d=0.5, drill=0.2), dict(net="GND", at=(45.9, 23.9), d=0.5, drill=0.2),
 ]
 # GND stitching vias: grid pitch (mm), kept clear of copper, courtyards and keepouts.
 STITCH_PITCH = 2.54

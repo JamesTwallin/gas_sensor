@@ -13,16 +13,24 @@ enumerates over native USB, flashes, and `firmware/phone_board` reports the
 ADS1115, the SHT40, a 5.02 V heater rail and both Figaro sensors on USB power.
 BLE and battery operation are not yet exercised.
 
-Rev C keeps rev B's schematic, parts and block layout and only removes empty
-board area: the MCU column (module, decoupling, SHT40 tongue and its
-hand-routed neck) moved 2 mm up as one unit, the power/USB column (switch, LDO,
-hand-routed boost loop, charger, USB-C) moved 2 mm left as one unit, and the
-free-form right third was re-packed: the two cans sit flush at the right edge
-with the battery connector under them (cable leaves through the right edge),
-the ADC and sensor networks form one column, RESET sits above BOOT, and the
-serial test pads are a labelled 2 × 2 grid. Area is down 17 %. The KiCad checks
-report 0 DRC violations, 0 unconnected items and 0 schematic/PCB mismatches;
-ERC is clean.
+Rev C keeps rev B's schematic and parts, shrinks the board from 66 × 36 to
+60 × 33 mm (17 % less area) and gives it a business end:
+
+- **Front (right) edge: the sensors.** Both Figaro cans overhang the edge by
+  about 1 mm and a 7 mm notch is milled between them, so each can stands in air
+  on three sides and the two heaters share less board.
+- **Rear: the power connections, beside the ESP32.** USB-C on the bottom edge
+  and the battery JST-PH on the top edge, both right next to the module and
+  about 30 mm from the heaters; the reverse-cell FET sits by the JST.
+- **SHT40 isolation.** The tongue keeps its L-slot with a 2.5 mm neck, and no
+  copper pour is allowed on any of the four layers over the tongue or neck:
+  only its four tracks cross, since copper is what carries board heat.
+- The hand-routed boost loop and ESP32 decoupling were moved as rigid units;
+  everything else was re-placed (charger and ADC in the middle, RESET above
+  BOOT, serial test pads as a labelled 2 × 2 grid).
+
+The KiCad checks report 0 DRC violations, 0 unconnected items and 0
+schematic/PCB mismatches; ERC is clean.
 
 **USB-only power is marginal at heater turn-on.** With no cell on J2, the
 BQ24073's 500 mA USB input limit only just covers the boost converter starting

@@ -10,8 +10,9 @@ sensors, out through the lid grille.
 **Status: parameters updated for the rev C board (60 × 33 mm), not yet
 re-rendered, printed or fitted.** `case.scad` carries rev C's outline, sensor,
 USB-C, switch, button, LED, SHT40 and mounting-hole positions, and the battery
-plug opening has moved from the bottom wall to the right wall, where rev C's
-JST-PH now points. The STLs and `build/assembly.png` still show the rev B case:
+plug opening has moved from the bottom wall to the top wall beside the power
+switch, where rev C's JST-PH now points (both power leads leave at the ESP32
+end, away from the sensors). The STLs and `build/assembly.png` still show the rev B case:
 regenerate them (below) before printing.
 
 **Open problem before printing: the board hold-down.** The rev B case screwed
@@ -70,8 +71,8 @@ inserts, open the pilots to 3.2 mm and set M2 × 3 mm inserts.
    the lead up the right-hand end. The ribs hold it off the floor vents.
 2. Lower the board onto the end shelves, sensors at the right-hand end.
 3. Fit the M2 × 5 screw through the board's H1 hole into the boss.
-4. Plug the battery into J2 through the right-hand wall opening, under the
-   sensors. **Check the polarity first** (board README).
+4. Plug the battery into J2 through the top-wall opening next to the power
+   switch. **Check the polarity first** (board README).
 5. Line the sensor cans up with the lid collars and lower the lid. The lip locates
    it; the cans should pass through without touching.
 6. Four M2 × 8 screws, gently — they cut their own threads.
@@ -79,8 +80,9 @@ inserts, open the pilots to 3.2 mm and set M2 × 3 mm inserts.
 ## Openings
 
 - **Bottom edge:** USB-C.
-- **Right end:** a wide opening at the battery connector, below the sensor louvres.
-- **Top edge:** the power slide switch, lever reachable from the side.
+- **Top edge:** the battery connector opening and the power slide switch,
+  lever reachable from the side.
+- **Right end:** louvres only; the sensor cans overhang the board edge here.
 - **Lid:** sensor collars, hex grille over the sensor end and over the SHT40,
   RST and BOOT holes (press with a pen or paperclip), LED window.
 - **Walls:** louvres at board level, sensor end and SHT40 end.

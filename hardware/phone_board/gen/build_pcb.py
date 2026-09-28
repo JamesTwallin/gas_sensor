@@ -83,9 +83,18 @@ def write_project():
         json.dump(pro, f, indent=2)
 
 
-def rounded_rect(board, x0, y0, x1, y1, r, layer):
+def rounded_rect(board, x0, y0, x1, y1, r, layer, notches=()):
+    """Outline with rounded corners. `notches` are rectangular cut-ins from the
+    right edge: dict(x0=inner end, y0, y1). The right edge is split around them."""
     w = mm(0.1)
-    segs = [((x0 + r, y0), (x1 - r, y0)), ((x1, y0 + r), (x1, y1 - r)),
+    right = []
+    y = y0 + r
+    for n in sorted(notches, key=lambda n: n["y0"]):
+        right += [((x1, y), (x1, n["y0"])), ((x1, n["y0"]), (n["x0"], n["y0"])),
+                  ((n["x0"], n["y0"]), (n["x0"], n["y1"])), ((n["x0"], n["y1"]), (x1, n["y1"]))]
+        y = n["y1"]
+    right.append(((x1, y), (x1, y1 - r)))
+    segs = [((x0 + r, y0), (x1 - r, y0)), *right,
             ((x1 - r, y1), (x0 + r, y1)), ((x0, y1 - r), (x0, y0 + r))]
     for a, b in segs:
         s = pcbnew.PCB_SHAPE(board)
@@ -210,7 +219,7 @@ def main():
         print("pads without a net:", ", ".join(unassigned))
 
     x0, y0, x1, y1 = design.OUTLINE
-    rounded_rect(board, x0, y0, x1, y1, design.CORNER_R, pcbnew.Edge_Cuts)
+    rounded_rect(board, x0, y0, x1, y1, design.CORNER_R, pcbnew.Edge_Cuts, getattr(design, "NOTCHES", ()))
     for cut in getattr(design, "SLOTS", []):
         # thermal isolation slot: a closed polygon on Edge.Cuts (the mill rounds inner corners)
         for a, c in zip(cut, cut[1:] + cut[:1]):
