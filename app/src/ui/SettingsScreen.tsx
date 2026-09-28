@@ -4,8 +4,10 @@
 
 import { useEffect, useState } from 'react';
 import { Switch, TextInput, type StyleProp, type TextStyle } from 'react-native';
+import { TGS2610, TGS2611, type ChannelCalibration, type GasCurve } from '../core/ppm';
 import type { AppSettings } from '../core/settings';
 import type { AppController, UiState } from '../controller';
+import { fmtWhen } from './format';
 import { Btn, H2, H3, Hint } from './components';
 import { Box, Text, borderRadii, sizes, spacing } from './restyle';
 import type { Theme } from './theme';
@@ -132,6 +134,51 @@ function TextField({
   );
 }
 
+/** One channel of the Ro calibration: what is stored, an input for the known ppm, and a Set button. */
+function CalibrationRow({
+  theme,
+  curve,
+  cal,
+  rsOhm,
+  connected,
+  onSet,
+}: {
+  theme: Theme;
+  curve: GasCurve;
+  cal: ChannelCalibration | null;
+  rsOhm: number | null;
+  connected: boolean;
+  onSet: (ppm: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(curve.refPpm));
+  const stored = cal
+    ? `Ro ${Math.round(cal.roOhm)} Ω from ${cal.ppm} ppm, ${fmtWhen(cal.at)}`
+    : `Datasheet-typical Ro ${curve.roTypicalOhm} Ω (${curve.roMinOhm}–${curve.roMaxOhm} Ω across parts)`;
+  const now = rsOhm === null ? 'no reading' : `Rs now ${(rsOhm / 1000).toFixed(1)} kΩ`;
+  const gasLabel = curve.gas === 'CH4' ? 'Methane' : 'LP gas (iso-butane)';
+  return (
+    <Box gap="xs" paddingVertical="m" borderBottomWidth={1} style={{ borderBottomColor: theme.border }}>
+      <Text variant="label">{gasLabel}</Text>
+      <Text variant="labelHint">{`${stored} · ${now}`}</Text>
+      <Box flexDirection="row" alignItems="center" gap="s" marginTop="xs">
+        <Text variant="labelHint" flexShrink={1}>
+          Sensor is in
+        </Text>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          keyboardType="number-pad"
+          returnKeyType="done"
+          selectTextOnFocus
+          style={[inputStyle(theme, false), { minWidth: 88 }]}
+        />
+        <Text variant="labelHint">ppm</Text>
+        <Btn theme={theme} title="Set Ro" disabled={!connected || rsOhm === null} onPress={() => onSet(parseFloat(draft))} />
+      </Box>
+    </Box>
+  );
+}
+
 export function SettingsScreen({
   state,
   controller,
@@ -143,6 +190,7 @@ export function SettingsScreen({
 }) {
   const { settings, info } = state;
   const sim = state.linkKind === 'sim';
+  const connected = state.linked && state.linkStatus === 'connected';
 
   return (
     <Box>
@@ -202,6 +250,39 @@ export function SettingsScreen({
         </Box>
       )}
 
+      <H3>Concentration calibration</H3>
+      <Hint>
+        The ppm estimate uses the Figaro datasheet curves, corrected for temperature and humidity. It needs Ro, the
+        sensor&apos;s resistance in a known concentration, which varies 10× between parts. Put the connected board in a
+        known gas, enter the concentration, and tap Set Ro. Stored per board.
+      </Hint>
+      <CalibrationRow
+        theme={theme}
+        curve={TGS2611}
+        cal={state.calibration.ch4}
+        rsOhm={state.lastRs.ch4}
+        connected={connected}
+        onSet={(ppm) => controller.calibrate('ch4', ppm)}
+      />
+      <CalibrationRow
+        theme={theme}
+        curve={TGS2610}
+        cal={state.calibration.lpg}
+        rsOhm={state.lastRs.lpg}
+        connected={connected}
+        onSet={(ppm) => controller.calibrate('lpg', ppm)}
+      />
+      <Box flexDirection="row" gap="s" flexWrap="wrap" marginVertical="m">
+        <Btn
+          theme={theme}
+          title="Reset to datasheet Ro"
+          variant="danger"
+          disabled={!state.calibration.ch4 && !state.calibration.lpg}
+          onPress={() => controller.resetCalibration()}
+        />
+      </Box>
+
+      <H3>Board</H3>
       <Box flexDirection="row" gap="s" flexWrap="wrap" marginVertical="m">
         <Btn theme={theme} title="Identify (blink LED)" onPress={() => controller.identify()} />
       </Box>

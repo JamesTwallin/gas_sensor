@@ -1,5 +1,6 @@
 // The hero state card, the two chart cards and the read-out tiles.
 
+import { TGS2610, TGS2611, fmtPpm } from '../core/ppm';
 import { batteryPercent } from '../core/simulator';
 import type { AppController, UiState } from '../controller';
 import { LIVE_SPAN_MS } from '../controller';
@@ -198,6 +199,19 @@ export function LiveScreen({
       </Box>
 
       <Box gap="s">
+        <Box flexDirection="row" alignItems="baseline" justifyContent="space-between" paddingHorizontal="xs">
+          <Text variant="eyebrow">Concentration</Text>
+          <Text variant="legend" numberOfLines={1}>
+            {state.calibration.ch4 || state.calibration.lpg ? 'datasheet curve, calibrated' : 'datasheet curve, uncalibrated'}
+          </Text>
+        </Box>
+        <Box flexDirection="row" flexWrap="wrap" gap="s">
+          <Tile theme={theme} label="Methane" value={fmtPpm(state.lastPpm.ch4, TGS2611)} unit="ppm" />
+          <Tile theme={theme} label="LP gas (as iso-butane)" value={fmtPpm(state.lastPpm.lpg, TGS2610)} unit="ppm" />
+        </Box>
+      </Box>
+
+      <Box gap="s">
         <Text variant="eyebrow" paddingLeft="xs">
           Environment
         </Text>
@@ -213,8 +227,9 @@ export function LiveScreen({
           Power
         </Text>
         <Box flexDirection="row" flexWrap="wrap" gap="s">
-          <Tile theme={theme} label="Battery" value={s && s.vbatMv > 0 ? (s.vbatMv / 1000).toFixed(2) : '—'} unit="V" />
-          <Tile theme={theme} label="Charge" value={s && s.vbatMv > 0 ? String(batteryPercent(s.vbatMv)) : '—'} unit="%" />
+          {/* Below 3 V no LiPo is fitted: VBAT is 0 (no ADS1115) or a floating input. */}
+          <Tile theme={theme} label="Battery" value={s && s.vbatMv >= 3000 ? (s.vbatMv / 1000).toFixed(2) : '—'} unit="V" />
+          <Tile theme={theme} label="Charge" value={s && s.vbatMv >= 3000 ? String(batteryPercent(s.vbatMv)) : '—'} unit="%" />
           <Tile theme={theme} label="Heater rail" value={state.info.heater_mv ? (state.info.heater_mv / 1000).toFixed(2) : '—'} unit="V" />
         </Box>
       </Box>

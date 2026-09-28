@@ -1,6 +1,6 @@
 // Survey CSV, docs/phone_board.md "App CSV (backwards compatible)": the rev A
 // columns unchanged (so tools/plot_map.py and tools/plot_survey.py keep working),
-// then the rev B columns appended. Pure, no DOM.
+// then the rev B columns appended, then the concentration estimates. Pure, no DOM.
 
 export const CSV_COLUMNS = [
   'millis_since_boot',
@@ -24,6 +24,8 @@ export const CSV_COLUMNS = [
   'lpg_rs_ohm',
   'vbat_mv',
   'gps_accuracy_m',
+  'ch4_ppm_est',
+  'lpg_ppm_est',
 ] as const;
 
 export const CSV_HEADER = CSV_COLUMNS.join(',');
@@ -58,6 +60,9 @@ export interface CsvRowInput {
   ch4RsOhm: number | null;
   lpgRsOhm: number | null;
   vbatMv: number;
+  /** Datasheet-curve estimates (core/ppm.ts); blank when Rs is unknown. */
+  ch4PpmEst?: number | null;
+  lpgPpmEst?: number | null;
 }
 
 const pad = (n: number, w = 2) => String(n).padStart(w, '0');
@@ -109,6 +114,8 @@ export function formatCsvRow(r: CsvRowInput): string {
     fmt(r.lpgRsOhm, 0),
     String(Math.round(r.vbatMv)),
     g ? fmt(g.accuracyM, 1) : '',
+    fmt(r.ch4PpmEst, 0),
+    fmt(r.lpgPpmEst, 0),
   ];
   return cells.join(',');
 }

@@ -6,7 +6,7 @@ const SPEC_HEADER =
   'millis_since_boot,state,ch4_vout_mv,ch4_baseline_mv,ch4_dev_mv,' +
   'lpg_vout_mv,lpg_baseline_mv,lpg_dev_mv,temp_c,humidity_pct,pressure_hpa,' +
   'utc_iso8601,lat,lon,alt_m,sats,fix,' +
-  'ch4_rs_ohm,lpg_rs_ohm,vbat_mv,gps_accuracy_m';
+  'ch4_rs_ohm,lpg_rs_ohm,vbat_mv,gps_accuracy_m,ch4_ppm_est,lpg_ppm_est';
 
 // rev A header, from src/main.cpp, which must remain a prefix.
 const REV_A_HEADER =
@@ -33,6 +33,8 @@ function base(over: Partial<CsvRowInput> = {}): CsvRowInput {
     ch4RsOhm: 50000.4,
     lpgRsOhm: 80012.6,
     vbatMv: 3987,
+    ch4PpmEst: 1234.5,
+    lpgPpmEst: 87.2,
     ...over,
   };
 }
@@ -47,7 +49,7 @@ describe('CSV', () => {
     const row = formatCsvRow(base());
     expect(row).toBe(
       '123456,RUNNING,2222,2101,122,1667,1650,17,21.46,55.5,1013.3,' +
-        '2026-09-17 09:05:07.042,51.507457,-0.127758,35.3,,1,50000,80013,3987,4.8',
+        '2026-09-17 09:05:07.042,51.507457,-0.127758,35.3,,1,50000,80013,3987,4.8,1235,87',
     );
     expect(row.split(',').length).toBe(SPEC_HEADER.split(',').length);
   });
@@ -57,16 +59,30 @@ describe('CSV', () => {
     expect(row.split(',').slice(2, 5)).toEqual(['1000', '1000', '1']);
   });
 
-  it('blank for missing environment, GPS, Rs; fix 0; column count constant', () => {
-    const row = formatCsvRow(base({ tempC: null, humidityPct: null, pressureHpa: null, gps: null, ch4RsOhm: null, lpgRsOhm: null, state: 'WARMUP', ch4BaselineMv: 0, lpgBaselineMv: 0 }));
+  it('blank for missing environment, GPS, Rs, estimates; fix 0; column count constant', () => {
+    const row = formatCsvRow(
+      base({
+        tempC: null,
+        humidityPct: null,
+        pressureHpa: null,
+        gps: null,
+        ch4RsOhm: null,
+        lpgRsOhm: null,
+        ch4PpmEst: null,
+        lpgPpmEst: undefined,
+        state: 'WARMUP',
+        ch4BaselineMv: 0,
+        lpgBaselineMv: 0,
+      }),
+    );
     const cells = row.split(',');
-    expect(cells.length).toBe(21);
+    expect(cells.length).toBe(23);
     expect(cells[1]).toBe('WARMUP');
     expect(cells[3]).toBe('0');
     expect(cells.slice(8, 11)).toEqual(['', '', '']);
     expect(cells[11]).toBe('2026-09-17 09:05:07.042'); // phone clock is always there
     expect(cells.slice(12, 17)).toEqual(['', '', '', '', '0']);
-    expect(cells.slice(17)).toEqual(['', '', '3987', '']);
+    expect(cells.slice(17)).toEqual(['', '', '3987', '', '', '']);
   });
 
   it('fix = 1 only when accuracy ≤ 25 m and the fix is fresh', () => {

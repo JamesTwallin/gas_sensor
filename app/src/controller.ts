@@ -11,6 +11,16 @@ import { AppState, NativeModules, type AppStateStatus } from 'react-native';
 import { bridgeUrl } from './core/bridge';
 import { ChartBuffer, type ChartPoint } from './core/chartData';
 import { formatCsvRow, type GpsFix } from './core/csv';
+import {
+  NO_CALIBRATION,
+  TGS2610,
+  TGS2611,
+  estimatePpm,
+  roFor,
+  roFromKnownPpm,
+  type Calibration,
+  type ChannelCalibration,
+} from './core/ppm';
 import { Processor, ledColour, type ProcessorOutput } from './core/processor';
 import {
   DEFAULT_INFO,
@@ -26,6 +36,7 @@ import type { AppSettings } from './core/settings';
 import { bleAvailable, scanForSensors, type ScanHandle } from './services/ble';
 import { BleDeviceLink } from './services/bleDevice';
 import { BridgeDeviceLink } from './services/bridgeDevice';
+import { loadCalibration, saveCalibration } from './services/calibrationStore';
 import type { DeviceLink, LinkHandlers, LinkStatus, ScannedDevice } from './services/device';
 import { GpsService, type GpsStatus } from './services/gps';
 import { setKeepAwake } from './services/keepAwake';
@@ -55,6 +66,10 @@ export interface UiState {
   lastSample: Sample | null;
   lastOut: ProcessorOutput | null;
   lastRs: { ch4: number | null; lpg: number | null };
+  /** Datasheet-curve concentration estimates (core/ppm.ts). */
+  lastPpm: { ch4: number | null; lpg: number | null };
+  /** Ro calibration for the connected board (datasheet-typical Ro where null). */
+  calibration: Calibration;
   droppedPackets: number;
   badPackets: number;
   gpsStatus: GpsStatus;
@@ -110,6 +125,8 @@ export class AppController {
       lastSample: null,
       lastOut: null,
       lastRs: { ch4: null, lpg: null },
+      lastPpm: { ch4: null, lpg: null },
+      calibration: { ...NO_CALIBRATION },
       droppedPackets: 0,
       badPackets: 0,
       gpsStatus: 'off',
@@ -206,6 +223,12 @@ export class AppController {
   private onLinkReady = (): void => {
     this.lastLedKey = ''; // resend LED state after every (re)connect
     this.lastSeq = null;
+    const name = this.link?.name;
+    if (name) {
+      void loadCalibration(name).then((calibration) => {
+        if (this.link?.name === name) this.patch({ calibration });
+      });
+    }
     const { settings, info } = this.state;
     if (this.link && Math.round(settings.intervalMs) !== Math.round(info.interval_ms)) {
       void this.link.control(encodeSetInterval(settings.intervalMs));
@@ -324,6 +347,11 @@ export class AppController {
       ch4: rsOhm(ch4Mv, info.rl_ohm, info.vc_mv),
       lpg: rsOhm(lpgMv, info.rl_ohm, info.vc_mv),
     };
+    const cal = this.state.calibration;
+    const ppm = {
+      ch4: estimatePpm(rs.ch4, roFor(cal.ch4, TGS2611), s.tempC, s.humidityPct, TGS2611),
+      lpg: estimatePpm(rs.lpg, roFor(cal.lpg, TGS2610), s.tempC, s.humidityPct, TGS2610),
+    };
     const out = this.processor.push({
       t: s.msSinceBoot,
       ch4Mv,
@@ -361,6 +389,8 @@ export class AppController {
           ch4RsOhm: rs.ch4,
           lpgRsOhm: rs.lpg,
           vbatMv: s.vbatMv,
+          ch4PpmEst: ppm.ch4,
+          lpgPpmEst: ppm.lpg,
         }),
       );
     }
@@ -379,6 +409,7 @@ export class AppController {
         lastSample: s,
         lastOut: out,
         lastRs: rs,
+        lastPpm: ppm,
         droppedPackets: dropped,
         recRows: this.recorder.rows,
         chartTick: this.state.chartTick + 1,
@@ -395,6 +426,45 @@ export class AppController {
   identify(): void {
     if (this.link) void this.link.control(encodeIdentify());
     else this.toast('Not connected');
+  }
+
+  // ------------------------------------------------------------ calibration
+  /**
+   * Take Ro for one channel from the current reading, given the concentration
+   * the sensor is sitting in right now. Stored per board name.
+   */
+  calibrate(channel: 'ch4' | 'lpg', knownPpm: number): void {
+    const name = this.link?.name;
+    const s = this.state.lastSample;
+    const rs = this.state.lastRs[channel];
+    if (!name || !s || rs === null) {
+      this.toast('Connect and wait for a reading first');
+      return;
+    }
+    if (!(knownPpm > 0)) {
+      this.toast('Enter the concentration the sensor is in');
+      return;
+    }
+    const curve = channel === 'ch4' ? TGS2611 : TGS2610;
+    const rec: ChannelCalibration = {
+      roOhm: roFromKnownPpm(rs, knownPpm, s.tempC, s.humidityPct, curve),
+      ppm: knownPpm,
+      at: Date.now(),
+      tempC: s.tempC,
+      rh: s.humidityPct,
+    };
+    const calibration = { ...this.state.calibration, [channel]: rec };
+    this.patch({ calibration });
+    void saveCalibration(name, calibration);
+    this.toast(`${curve.gas} Ro set to ${Math.round(rec.roOhm)} Ω`);
+  }
+
+  resetCalibration(): void {
+    const name = this.link?.name;
+    const calibration = { ...NO_CALIBRATION };
+    this.patch({ calibration });
+    if (name) void saveCalibration(name, calibration);
+    this.toast('Back to datasheet-typical Ro');
   }
 
   // ------------------------------------------------------------ recording

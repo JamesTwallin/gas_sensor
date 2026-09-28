@@ -176,8 +176,14 @@ The app writes the rev A column set unchanged, so `tools/plot_map.py` and
 millis_since_boot,state,ch4_vout_mv,ch4_baseline_mv,ch4_dev_mv,
 lpg_vout_mv,lpg_baseline_mv,lpg_dev_mv,temp_c,humidity_pct,pressure_hpa,
 utc_iso8601,lat,lon,alt_m,sats,fix,
-ch4_rs_ohm,lpg_rs_ohm,vbat_mv,gps_accuracy_m
+ch4_rs_ohm,lpg_rs_ohm,vbat_mv,gps_accuracy_m,ch4_ppm_est,lpg_ppm_est
 ```
+
+- `ch4_ppm_est` / `lpg_ppm_est` are the app's datasheet-curve estimates
+  (`app/src/core/ppm.ts`: Rs/Ro power law with the Table 1 temperature and
+  humidity correction, LPG referenced to iso-butane). They are only as good as
+  Ro: datasheet-typical until the board is calibrated in a known gas from the
+  app's Settings, so treat them as indicative. Blank when Rs is unknown.
 
 - `*_vout_mv` is now VRL (sensor load voltage) — same direction as before
   (higher = more gas), different absolute scale from the rev A modules.
