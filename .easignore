@@ -3,26 +3,29 @@
 # the important exclusions. Only app/ is needed; the native folders are
 # generated on the build server from app.json (CNG), and a local one would be
 # used verbatim.
-.pio/
-.vscode/
-.claude/
-docs/
-firmware/
-hardware/
-src/
-tools/
-platformio.ini
-# Not *.png: app/assets holds the icon and splash images prebuild needs.
+#
+# Gitignore syntax: a pattern without a leading slash matches at any depth, so
+# the repo-root folders are anchored with "/" (an unanchored "src/" would also
+# drop app/src, which broke a build).
+/.pio/
+/.vscode/
+/.claude/
+/docs/
+/firmware/
+/hardware/
+/src/
+/tools/
+/platformio.ini
 *.csv
 *.mp4
 *.log
-app/node_modules/
-app/android/
-app/ios/
-app/.expo/
-app/dist/
-app/web-build/
-app/coverage/
-app/credentials.json
+/app/node_modules/
+/app/android/
+/app/ios/
+/app/.expo/
+/app/dist/
+/app/web-build/
+/app/coverage/
+/app/credentials.json
 *.jks
 .DS_Store
