@@ -12,7 +12,7 @@ hardware/
 src/
 tools/
 platformio.ini
-*.png
+# Not *.png: app/assets holds the icon and splash images prebuild needs.
 *.csv
 *.mp4
 *.log
