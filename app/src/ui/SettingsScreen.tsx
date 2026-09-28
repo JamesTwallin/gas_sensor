@@ -21,6 +21,12 @@ interface Field {
 
 const FIELDS: Field[] = [
   { key: 'simulate', label: 'Simulated device', hint: 'Fake board with random plumes, for testing' },
+  {
+    key: 'usbBridge',
+    label: 'USB bridge via PC',
+    hint: 'Board plugged into a PC running tools/serial_bridge.py. Always used in Expo Go (no Bluetooth there)',
+  },
+  { key: 'bridgeHost', label: 'Bridge PC address', hint: 'Blank = the PC running Expo' },
   { key: 'lightTheme', label: 'Light theme', hint: 'Easier to read in direct sun' },
   { key: 'keepAwake', label: 'Keep screen awake', hint: 'While connected or recording' },
   { key: 'driveLed', label: 'Drive board LED', hint: 'Green / amber / red from CH4 class' },
@@ -75,6 +81,44 @@ function NumberField({
   );
 }
 
+function TextField({
+  value,
+  theme,
+  placeholder,
+  onCommit,
+}: {
+  value: string;
+  theme: Theme;
+  placeholder?: string;
+  onCommit: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+  const commit = () => onCommit(draft.trim());
+  return (
+    <TextInput
+      value={draft}
+      onChangeText={setDraft}
+      onBlur={commit}
+      onSubmitEditing={commit}
+      placeholder={placeholder}
+      placeholderTextColor={theme.textMuted}
+      keyboardType="url"
+      autoCapitalize="none"
+      autoCorrect={false}
+      returnKeyType="done"
+      selectTextOnFocus
+      style={[
+        styles.input,
+        styles.inputText,
+        { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface },
+      ]}
+    />
+  );
+}
+
 export function SettingsScreen({
   state,
   controller,
@@ -103,6 +147,13 @@ export function SettingsScreen({
                 value={v}
                 onValueChange={(next) => void controller.updateSetting(f.key, next as never)}
                 trackColor={{ true: theme.good, false: theme.border }}
+              />
+            ) : typeof v === 'string' ? (
+              <TextField
+                value={v}
+                theme={theme}
+                placeholder="auto"
+                onCommit={(text) => void controller.updateSetting(f.key, text as never)}
               />
             ) : (
               <NumberField
@@ -168,5 +219,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'right',
   },
+  inputText: { minWidth: 160, fontSize: 16, fontWeight: '600' },
   btnRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginVertical: 8 },
 });

@@ -72,6 +72,8 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
       `Recording without GPS (${state.gpsStatus}${state.gpsDetail ? ': ' + state.gpsDetail : ''}).`,
     ]);
   if (state.settings.simulate) banners.push(['info', 'Simulator mode: data is not real.']);
+  if (state.linked && state.linkKind === 'bridge')
+    banners.push(['info', 'USB bridge: readings relayed from the PC over Wi‑Fi. Board controls are unavailable.']);
   if (state.droppedPackets > 0 || state.badPackets > 0)
     banners.push([
       'info',

@@ -25,6 +25,14 @@ export interface AppSettings extends ProcessingSettings {
   keepAwake: boolean;
   /** Light theme for bright sunlight (dark is the default). */
   lightTheme: boolean;
+  /**
+   * Talk to the board through tools/serial_bridge.py on a PC (USB serial
+   * relayed over Wi-Fi) instead of Bluetooth. Forced on where the BLE native
+   * module is missing, i.e. in Expo Go.
+   */
+  usbBridge: boolean;
+  /** Bridge PC address (host, host:port or ws:// URL). Blank = the PC running Expo. */
+  bridgeHost: string;
 }
 
 /**
@@ -48,6 +56,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   driveLed: true,
   keepAwake: true,
   lightTheme: false,
+  usbBridge: false,
+  bridgeHost: '',
 };
 
 /** Merge a stored (possibly partial or stale) object over the defaults, keeping types sane. */
@@ -59,6 +69,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     const def = DEFAULT_SETTINGS[key];
     const v = r[key];
     if (typeof def === 'boolean' && typeof v === 'boolean') (out[key] as boolean) = v;
+    if (typeof def === 'string' && typeof v === 'string') (out[key] as string) = v.trim().slice(0, 200);
     if (typeof def === 'number' && typeof v === 'number' && Number.isFinite(v) && v >= 0) {
       (out[key] as number) = v;
     }

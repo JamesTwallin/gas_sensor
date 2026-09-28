@@ -5,12 +5,21 @@
 // (ui/DevicePicker.tsx). Everything here is about *finding* a board; talking to
 // one is bleDevice.ts.
 
-import { PermissionsAndroid, Platform } from 'react-native';
+import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import { BleManager, State, type Device } from 'react-native-ble-plx';
 import { SERVICE_UUID } from '../core/protocol';
 import type { ScannedDevice } from './device';
 
 let manager: BleManager | null = null;
+
+/**
+ * Whether the BLE native module is in this binary. It is in a dev/EAS build
+ * but not in Expo Go, where constructing a BleManager throws; the app then
+ * falls back to the USB bridge (services/bridgeDevice.ts).
+ */
+export function bleAvailable(): boolean {
+  return NativeModules.BlePlx != null;
+}
 
 /** One manager for the process: constructing several fights over the adapter. */
 export function bleManager(): BleManager {

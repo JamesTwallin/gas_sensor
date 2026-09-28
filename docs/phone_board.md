@@ -187,3 +187,25 @@ ch4_rs_ohm,lpg_rs_ohm,vbat_mv,gps_accuracy_m
   blank `sats` parses as NaN, so it currently drops *every* rev B row. That
   filter must treat a blank `sats` as passing (rely on `fix` /
   `gps_accuracy_m` instead) before rev B logs will map.
+
+## Bench: USB bridge for Expo Go
+
+Expo Go cannot load `react-native-ble-plx`, so a phone running the app from
+`npx expo start --go` has no Bluetooth. For bench work the board can instead be
+plugged into a PC and relayed over Wi-Fi by [tools/serial_bridge.py](../tools/serial_bridge.py),
+which turns the firmware's serial CSV back into protocol-v1 Sample packets:
+
+```
+python tools/serial_bridge.py            # needs pyserial; PlatformIO's python has it
+```
+
+- `http://<pc>:8765/` is a live read-out page; `ws://<pc>:8765/ws` carries the
+  packets (binary) and the Info JSON (text) to the app.
+- In Expo Go the app uses the bridge automatically, defaulting to the PC that
+  served the JS bundle. A dev build keeps BLE unless **Settings → USB bridge via
+  PC** is on; **Bridge PC address** overrides the host.
+- Control opcodes (interval, LED) are dropped: the serial link is one-way.
+- Rev A boards work too (their CSV is mapped to VRL / 2 with `tap_ratio` 2.0).
+
+Real BLE needs a development build: `npx expo run:android` with the phone on
+USB debugging, or `eas build --profile development`.
