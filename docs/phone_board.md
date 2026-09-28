@@ -2,6 +2,9 @@
 
 > Rev C (`hardware/phone_board`) is rev B compacted to 60 × 33 mm with the same
 > schematic, parts and pin map; everything electrical below applies unchanged.
+> Rev D (`hardware/phone_board_mems`, draft) swaps the Figaro cans for Winsen
+> GM-402B MEMS sensors on a 2.8 V LDO heater rail; its README lists what that
+> changes in the sensor loop, the heater monitor and the firmware constants.
 
 Rev B moves everything a phone already does onto the phone. The board keeps only
 what a phone cannot do: the gas sensors, the environment sensor, and a radio.

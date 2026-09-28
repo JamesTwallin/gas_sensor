@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "phone_board_mems")(type "KiCad")(uri "${KIPRJMOD}/lib/phone_board_mems.pretty")(options "")(descr "GM-402B MEMS sensor footprint from LCSC C99754"))
+)
