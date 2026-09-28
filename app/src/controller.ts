@@ -331,10 +331,9 @@ export class AppController {
       button: s.flags.button,
       heatersOff: s.flags.heatersOff,
     });
-    if (out.rebooted) {
-      this.chart.clear();
-      this.toast('Sensor restarted: warming up again');
-    }
+    // A board restart resets the processor to WARMUP, which the state card
+    // already shows; no toast, it fired on every bench reflash and power cycle.
+    if (out.rebooted) this.chart.clear();
     if (s.flags.button) this.toast('BOOT pressed: re-zeroing baseline');
 
     const baselineValid = out.state === 'BASELINING' || out.state === 'RUNNING';
