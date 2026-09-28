@@ -34,7 +34,6 @@ const FIELDS: Field[] = [
   { key: 'keepAwake', label: 'Keep screen awake', hint: 'While connected or recording' },
   { key: 'driveLed', label: 'Drive board LED', hint: 'Green / amber / red from CH4 class' },
   { key: 'warmupMs', label: 'Warm-up (min)', hint: 'From sensor power-on', scale: 60_000, min: 0 },
-  { key: 'baselineMs', label: 'Baselining (min)', scale: 60_000, min: 0 },
   { key: 'bgWindowMs', label: 'Baseline window (min)', scale: 60_000, min: 0.5 },
   { key: 'bgPercentile', label: 'Baseline percentile', hint: '15 = 15th percentile', scale: 0.01, min: 1, max: 50 },
   { key: 'classWindowMs', label: 'Class window (min)', hint: 'HIGH/MED/LOW range', scale: 60_000, min: 1, max: 60 },

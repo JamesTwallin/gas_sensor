@@ -1,29 +1,34 @@
 // Port of the rev A signal processing (src/main.cpp) to the phone. Pure, no DOM.
 //
-//   WARMUP      - ignore readings while the heater settles. Rev A timed this from
-//                 power-on, so it is timed here from the device's ms_since_boot:
-//                 connecting to a board that has been on for a while skips it.
-//   BASELINING  - fill the rolling background window before the baseline is trusted.
-//   RUNNING     - baseline = low percentile of the rolling window (tracks slow
-//                 drift, unmoved by brief plumes; no gate/freeze state), and a
+//   WARMUP      - the heater is settling and readings are meaningless for
+//                 classification (they are still charted and recorded raw). Rev A
+//                 timed this from power-on, so it is timed here from the device's
+//                 ms_since_boot: connecting to a board that has been on for a
+//                 while skips it entirely.
+//   RUNNING     - baseline = low percentile of the rolling background window
+//                 (tracks slow drift, unmoved by brief plumes), and a
 //                 HIGH/MED/LOW class from where the reading sits in its 10 min
-//                 min..max range.
+//                 min..max range. There is no separate "baselining" wait: the
+//                 baseline is provisional while the window is short and simply
+//                 firms up as samples arrive. The raw data is what matters and it
+//                 is never gated; everything derived can be recomputed from the
+//                 CSV later.
+//   HEATER_OFF  - flag bit6 (low-battery cutoff): the sensor output is
+//                 meaningless, windows are cleared, no class. When the heaters
+//                 come back the element is cold, so WARMUP restarts from there.
 //
 // Differences from rev A, all forced by the move to BLE:
 //  - windows are time-based (sample timestamps), since the interval is settable;
 //  - a backwards jump in ms_since_boot means the board rebooted, so the heater is
 //    cold again: processing restarts from WARMUP with empty windows;
-//  - re-zero comes from flag bit5 (BOOT button) or the app, not a GPIO poll.
-//    As in rev A it jumps straight to BASELINING with empty windows;
-//  - flag bit6 (heaters switched off, low-battery cutoff) makes the sensor output
-//    meaningless: state HEATER_OFF, windows cleared, no class. When the heaters
-//    come back the element is cold, so WARMUP restarts, timed from that sample.
+//  - re-zero comes from flag bit5 (BOOT button) or the app, not a GPIO poll. It
+//    empties the windows so the baseline restarts from the current reading.
 
 import type { ProcessingSettings } from './settings';
 import { DEFAULT_PROCESSING } from './settings';
 import { TimeWindow, classifyLevel, percentile, type Level } from './windows';
 
-export type RunState = 'WARMUP' | 'BASELINING' | 'RUNNING' | 'HEATER_OFF';
+export type RunState = 'WARMUP' | 'RUNNING' | 'HEATER_OFF';
 
 export interface ProcessorInput {
   /** Device ms_since_boot of the sample. */
@@ -51,9 +56,11 @@ export interface ProcessorOutput {
   /** Time spent in the current state, and how long that state lasts (0 for RUNNING). */
   stateElapsedMs: number;
   stateDurationMs: number;
+  /** How much history the baseline rests on (ms); short right after a (re)start. */
+  baselineAgeMs: number;
   ch4: ChannelResult;
   lpg: ChannelResult;
-  /** True when this sample caused a re-zero (button or reboot). */
+  /** True when this sample caused a re-zero (button or app). */
   rezeroed: boolean;
   rebooted: boolean;
 }
@@ -101,6 +108,8 @@ export class Processor {
   private lpg: Channel;
   private _state: RunState | null = null;
   private stateStart = 0;
+  /** Timestamp the background window last started filling from. */
+  private windowStart = 0;
   private lastT: number | null = null;
   private pendingRezero = false;
 
@@ -139,9 +148,10 @@ export class Processor {
     this.lpg = new Channel(this.s);
   }
 
-  private startBaselining(t: number): void {
-    this._state = 'BASELINING';
+  private startRunning(t: number): void {
+    this._state = 'RUNNING';
     this.stateStart = t;
+    this.windowStart = t;
     this.ch4.clearWindows();
     this.lpg.clearWindows();
   }
@@ -163,7 +173,7 @@ export class Processor {
         this._state = 'WARMUP';
         this.stateStart = 0; // warm-up is timed from device power-on
       } else {
-        this.startBaselining(t);
+        this.startRunning(t);
       }
     }
 
@@ -182,20 +192,21 @@ export class Processor {
 
     if (this._state !== 'HEATER_OFF' && (input.button || this.pendingRezero)) {
       this.pendingRezero = false;
-      this.startBaselining(t);
+      if (this._state === 'RUNNING') {
+        this.windowStart = t;
+        this.ch4.clearWindows();
+        this.lpg.clearWindows();
+      }
       rezeroed = true;
     }
 
     if (this._state === 'WARMUP' && t - this.stateStart >= this.s.warmupMs) {
-      this.startBaselining(t);
+      this.startRunning(t);
     }
 
-    if (this._state === 'BASELINING' || this._state === 'RUNNING') {
+    if (this._state === 'RUNNING') {
       this.ch4.push(t, ch4Mv, this.s);
       this.lpg.push(t, lpgMv, this.s);
-      if (this._state === 'BASELINING' && t - this.stateStart >= this.s.baselineMs) {
-        this._state = 'RUNNING';
-      }
     }
 
     const state = this._state as RunState;
@@ -204,7 +215,8 @@ export class Processor {
       t,
       state,
       stateElapsedMs: t - this.stateStart,
-      stateDurationMs: state === 'WARMUP' ? this.s.warmupMs : state === 'BASELINING' ? this.s.baselineMs : 0,
+      stateDurationMs: state === 'WARMUP' ? this.s.warmupMs : 0,
+      baselineAgeMs: running ? Math.min(t - this.windowStart, this.s.bgWindowMs) : 0,
       ch4: this.ch4.result(ch4Mv, running, this.s),
       lpg: this.lpg.result(lpgMv, running, this.s),
       rezeroed,

@@ -364,7 +364,7 @@ export class AppController {
     if (out.rebooted) this.chart.clear();
     if (s.flags.button) this.toast('BOOT pressed: re-zeroing baseline');
 
-    const baselineValid = out.state === 'BASELINING' || out.state === 'RUNNING';
+    const baselineValid = out.state === 'RUNNING';
     this.chart.push({
       t: s.msSinceBoot,
       ch4: ch4Mv,

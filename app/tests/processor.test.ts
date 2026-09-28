@@ -6,7 +6,6 @@ import { SimulatedBoard } from '../src/core/simulator';
 
 const S = {
   warmupMs: 10_000,
-  baselineMs: 5_000,
   bgWindowMs: 20_000,
   bgPercentile: 0.15,
   classWindowMs: 60_000,
@@ -20,7 +19,7 @@ function run(p: Processor, from: number, to: number, step: number, v: (t: number
 }
 
 describe('Processor state machine', () => {
-  it('WARMUP from boot, then BASELINING, then RUNNING, timed by sample timestamps', () => {
+  it('WARMUP from boot, then RUNNING straight away, timed by sample timestamps', () => {
     const p = new Processor(S);
     let o = p.push({ t: 250, ch4Mv: 3000, lpgMv: 3000 });
     expect(o.state).toBe('WARMUP');
@@ -31,29 +30,37 @@ describe('Processor state machine', () => {
     expect(o.state).toBe('WARMUP');
     expect(o.stateElapsedMs).toBe(9_750);
     o = p.push({ t: 10_000, ch4Mv: 1000, lpgMv: 500 });
-    expect(o.state).toBe('BASELINING');
-    expect(o.ch4.baselineMv).toBe(1000);
-    o = run(p, 10_250, 14_750, 250, () => 1000);
-    expect(o.state).toBe('BASELINING');
-    o = p.push({ t: 15_000, ch4Mv: 1000, lpgMv: 500 });
     expect(o.state).toBe('RUNNING');
+    expect(o.ch4.baselineMv).toBe(1000); // provisional: the one sample it has
     expect(o.ch4.level).toBe('LOW');
+    expect(o.baselineAgeMs).toBe(0);
+    o = run(p, 10_250, 14_750, 250, () => 1000);
+    expect(o.state).toBe('RUNNING');
+    expect(o.baselineAgeMs).toBe(4_750);
   });
 
-  it('timing does not depend on the sample interval', () => {
+  it('there is no baselining wait: classification is available from the first running sample', () => {
     for (const step of [100, 1000]) {
       const p = new Processor(S);
       let firstRunning = -1;
       for (let t = step; t <= 20_000; t += step) {
         if (p.push({ t, ch4Mv: 1000, lpgMv: 1000 }).state === 'RUNNING' && firstRunning < 0) firstRunning = t;
       }
-      expect(firstRunning).toBe(15_000);
+      expect(firstRunning).toBe(10_000);
     }
   });
 
   it('skips warm-up when the board has already been on long enough', () => {
     const p = new Processor(S);
-    expect(p.push({ t: 3_600_000, ch4Mv: 1000, lpgMv: 1000 }).state).toBe('BASELINING');
+    const o = p.push({ t: 3_600_000, ch4Mv: 1000, lpgMv: 1000 });
+    expect(o.state).toBe('RUNNING');
+    expect(o.ch4.level).toBe('LOW');
+  });
+
+  it('baseline age is capped at the background window', () => {
+    const p = new Processor(S);
+    const o = run(p, 10_000, 60_000, 250, () => 1000);
+    expect(o.baselineAgeMs).toBe(S.bgWindowMs);
   });
 
   it('baseline is the 15th percentile and holds through a plume; class goes HIGH', () => {
@@ -81,22 +88,23 @@ describe('Processor state machine', () => {
     expect(o.ch4.level).toBe('LOW');
   });
 
-  it('BOOT button (bit5) re-zeroes: BASELINING with fresh windows', () => {
+  it('BOOT button (bit5) re-zeroes: fresh windows, still RUNNING', () => {
     const p = new Processor(S);
     run(p, 10_000, 40_000, 250, () => 1000);
-    let o = p.push({ t: 40_250, ch4Mv: 1500, lpgMv: 700, button: true });
+    const o = p.push({ t: 40_250, ch4Mv: 1500, lpgMv: 700, button: true });
     expect(o.rezeroed).toBe(true);
-    expect(o.state).toBe('BASELINING');
-    expect(o.ch4.baselineMv).toBe(1500); // window cleared, only the new sample
-    o = run(p, 40_500, 45_250, 250, () => 1500);
     expect(o.state).toBe('RUNNING');
+    expect(o.ch4.baselineMv).toBe(1500); // window cleared, only the new sample
+    expect(o.baselineAgeMs).toBe(0);
   });
 
   it('app re-zero applies on the next sample', () => {
     const p = new Processor(S);
     run(p, 10_000, 40_000, 250, () => 1000);
     p.requestRezero();
-    expect(p.push({ t: 40_250, ch4Mv: 1000, lpgMv: 1000 }).state).toBe('BASELINING');
+    const o = p.push({ t: 40_250, ch4Mv: 1200, lpgMv: 1000 });
+    expect(o.rezeroed).toBe(true);
+    expect(o.ch4.baselineMv).toBe(1200);
   });
 
   it('a backwards ms_since_boot (board reboot) restarts from WARMUP', () => {
@@ -123,7 +131,7 @@ describe('Processor state machine', () => {
     o = run(p, 60_250, 69_750, 250, () => 3000);
     expect(o.state).toBe('WARMUP');
     o = p.push({ t: 70_000, ch4Mv: 1000, lpgMv: 1000 });
-    expect(o.state).toBe('BASELINING');
+    expect(o.state).toBe('RUNNING');
     expect(o.ch4.baselineMv).toBe(1000); // old windows were discarded
   });
 
@@ -139,7 +147,7 @@ describe('Processor state machine', () => {
 
   it('end-to-end with the simulator: parses, warms up, runs, classifies', () => {
     const board = new SimulatedBoard({ seed: 42, meanPlumeGapMs: 30_000 });
-    const p = new Processor({ ...S, warmupMs: 180_000, baselineMs: 120_000 });
+    const p = new Processor({ ...S, warmupMs: 180_000 });
     const levels = new Set<string>();
     let o!: ProcessorOutput;
     for (let i = 0; i < 4 * 60 * 20; i++) {
@@ -158,10 +166,10 @@ describe('Processor state machine', () => {
 describe('ledColour', () => {
   it('uses the rev A colours', () => {
     expect(ledColour('WARMUP', null)).toEqual([0, 0, 20]);
-    expect(ledColour('BASELINING', null)).toEqual([0, 0, 20]);
     expect(ledColour('RUNNING', 'LOW')).toEqual([0, 30, 0]);
     expect(ledColour('RUNNING', 'MED')).toEqual([35, 18, 0]);
     expect(ledColour('RUNNING', 'HIGH')).toEqual([40, 0, 0]);
     expect(ledColour('HEATER_OFF', null)).toEqual([0, 0, 0]);
+    expect(ledColour(null, null)).toEqual([0, 0, 20]);
   });
 });

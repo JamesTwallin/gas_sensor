@@ -18,7 +18,7 @@ app/
     base64.ts      base64 <-> bytes (react-native-ble-plx speaks base64)
     sensor.ts      VRL = tap × tap_ratio, Rs = RL (VC − VRL) / VRL
     windows.ts     time-based rolling window, rev A percentile + classifier
-    processor.ts   WARMUP / BASELINING / RUNNING / HEATER_OFF state machine, LED colour
+    processor.ts   WARMUP / RUNNING / HEATER_OFF state machine, LED colour
     csv.ts         exact spec column order, row formatting, file names
     chartData.ts   chart history + peak-per-column decimation
     simulator.ts   simulated board producing protocol-exact packets
@@ -131,9 +131,12 @@ advertising the service UUID and shows its own picker.
 ## Using it in the field
 
 1. Power the board, tap **Connect**, pick `CH4-XXXX` from the list.
-2. The big card shows **WARMING UP** (timed from the board's power-on), then
-   **BASELINING**, then **LOW / MED / HIGH** with the CH4 deviation above baseline.
-   The board LED follows (blue → green / amber / red).
+2. The big card shows **WARMING UP** (timed from the board's power-on; skipped
+   if the board has been on a while), then **LOW / MED / HIGH** with the CH4
+   deviation above baseline. There is no baselining wait: the rolling baseline
+   starts from the first reading and firms up over the next couple of minutes
+   (the card says "settling" meanwhile). Raw readings are charted and recorded
+   in every state. The board LED follows (blue → green / amber / red).
 3. Tap **● Record** to start a survey. Rows are appended to storage every 3 s.
    Press the board's BOOT button or **Re-zero** to restart the baseline.
 4. A red **HEATERS OFF** banner means the firmware's low-battery cutoff tripped:

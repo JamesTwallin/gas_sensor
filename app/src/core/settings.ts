@@ -1,10 +1,8 @@
 // Processing + app settings. Pure: persistence lives in services/.
 
 export interface ProcessingSettings {
-  /** Heater warm-up after device power-on before readings are used (ms since boot). */
+  /** Heater warm-up after device power-on before readings are classified (ms since boot). */
   warmupMs: number;
-  /** Time the rolling background must fill before the baseline is trusted. */
-  baselineMs: number;
   /** Rolling background window for the percentile baseline. */
   bgWindowMs: number;
   /** Percentile (0–1) of the background window taken as the baseline. */
@@ -36,13 +34,13 @@ export interface AppSettings extends ProcessingSettings {
 }
 
 /**
- * Field defaults. Rev A shipped bench values (15 s warm-up, 30 s baseline); a
- * real survey wants minutes -- the Figaro "initial action" alone is minutes.
- * Windows, percentile and range floor are the rev A values.
+ * Field defaults. Rev A shipped a 15 s bench warm-up; a real survey wants
+ * minutes -- the Figaro "initial action" alone is minutes. Windows, percentile
+ * and range floor are the rev A values. There is no baselining wait: the
+ * baseline is provisional from the first sample and firms up as the window fills.
  */
 export const DEFAULT_PROCESSING: ProcessingSettings = {
   warmupMs: 3 * 60_000,
-  baselineMs: 2 * 60_000,
   bgWindowMs: 2 * 60_000,
   bgPercentile: 0.15,
   classWindowMs: 10 * 60_000,

@@ -58,15 +58,18 @@ function cardLook(state: UiState, theme: Theme): CardLook {
       sub: 'Battery cutoff — no valid readings',
     };
   }
-  if (out.state === 'WARMUP' || out.state === 'BASELINING') {
+  if (out.state === 'WARMUP') {
     return {
       ...quiet,
-      eyebrow: out.state === 'WARMUP' ? 'Heater warm-up' : 'Learning clean air',
-      word: out.state === 'WARMUP' ? 'WARMING UP' : 'BASELINING',
+      eyebrow: 'Heater warm-up',
+      word: 'WARMING UP',
       sub: `${fmtDuration(out.stateDurationMs - out.stateElapsedMs)} left`,
       progress: Math.min(1, out.stateElapsedMs / Math.max(1, out.stateDurationMs)),
     };
   }
+  // RUNNING from the first sample: the baseline is provisional while the
+  // background window is still short, and the eyebrow says so.
+  const settling = out.baselineAgeMs < 30_000;
   const level = out.ch4.level ?? 'LOW';
   const skin =
     level === 'HIGH'
@@ -79,7 +82,7 @@ function cardLook(state: UiState, theme: Theme): CardLook {
     border: skin.bg,
     big: true,
     progress: null,
-    eyebrow: 'CH4 above baseline',
+    eyebrow: settling ? `CH4 above baseline · settling ${Math.round(out.baselineAgeMs / 1000)} s` : 'CH4 above baseline',
     word: out.ch4.level ?? '—',
     sub: `${signed(out.ch4.devMv)} mV`,
     lpg: `LPG ${out.lpg.level ?? '—'} · ${signed(out.lpg.devMv)} mV`,
