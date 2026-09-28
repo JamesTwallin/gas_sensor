@@ -338,11 +338,17 @@ def serial_loop(hub: Hub, port_arg: str | None, baud: int, echo: bool, stop: thr
             continue
         announced_none = False
         try:
-            # DTR asserted on open: the ESP32-S3 native-USB CDC only reports
-            # `if (Serial)` true, and so only prints its CSV, while a host has DTR up.
-            ser = serial.Serial(port, baud, timeout=1, dsrdtr=False, rtscts=False)
-            ser.dtr = True
+            # The ESP32-S3's USB-Serial-JTAG resets the chip on a DTR/RTS edge, so
+            # open with both held low (set before open: no edge at all). If the
+            # firmware then stays silent because it gates output on `if (Serial)`,
+            # DTR is raised once below, which costs at most one reboot.
+            ser = serial.Serial()
+            ser.port = port
+            ser.baudrate = baud
+            ser.timeout = 1
+            ser.dtr = False
             ser.rts = False
+            ser.open()
         except Exception as e:  # noqa: BLE001
             print(f"Could not open {port}: {e}. Retrying in 2 s...")
             with hub.lock:
@@ -354,12 +360,18 @@ def serial_loop(hub: Hub, port_arg: str | None, baud: int, echo: bool, stop: thr
         with hub.lock:
             hub.port, hub.port_open = port, True
         silent_since = time.time()
+        dtr_raised = False
         warned_silent = False
         try:
             while not stop.is_set():
                 raw = ser.readline()
                 if not raw:
-                    if not warned_silent and time.time() - silent_since > 8:
+                    silent_for = time.time() - silent_since
+                    if not dtr_raised and silent_for > 5:
+                        dtr_raised = True
+                        print(f"{port} silent for 5 s: raising DTR in case the firmware waits for a terminal.")
+                        ser.dtr = True
+                    elif not warned_silent and silent_for > 15:
                         warned_silent = True
                         print(
                             f"{port} is open but silent. Is the firmware flashed? "
