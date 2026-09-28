@@ -1,0 +1,28 @@
+# What EAS Build uploads for the phone app. EAS reads this file at the git
+# root (not app/), and it replaces .gitignore for the upload, so it must repeat
+# the important exclusions. Only app/ is needed; the native folders are
+# generated on the build server from app.json (CNG), and a local one would be
+# used verbatim.
+.pio/
+.vscode/
+.claude/
+docs/
+firmware/
+hardware/
+src/
+tools/
+platformio.ini
+*.png
+*.csv
+*.mp4
+*.log
+app/node_modules/
+app/android/
+app/ios/
+app/.expo/
+app/dist/
+app/web-build/
+app/coverage/
+app/credentials.json
+*.jks
+.DS_Store
