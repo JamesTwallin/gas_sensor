@@ -1,16 +1,16 @@
 // The big state card, the two charts and the environment read-out.
 
-import { StyleSheet, Text, View } from 'react-native';
 import { batteryPercent } from '../core/simulator';
 import type { AppController, UiState } from '../controller';
 import { LIVE_SPAN_MS } from '../controller';
 import { LiveChart, OverviewChart } from './charts';
 import { Legend } from './components';
 import { fmtDuration, signed } from './format';
+import { Box, Text } from './restyle';
 import type { Theme } from './theme';
 
-const CHART_HEIGHT = 150;
-const OVERVIEW_HEIGHT = 110;
+const CHART_HEIGHT = 140;
+const OVERVIEW_HEIGHT = 96;
 
 const kohm = (r: number | null) =>
   r === null ? '—' : r >= 1e6 ? `${(r / 1e6).toFixed(2)} MΩ` : `${(r / 1000).toFixed(1)} kΩ`;
@@ -102,29 +102,43 @@ export function LiveScreen({
   ];
 
   return (
-    <View>
-      <View style={[styles.card, { backgroundColor: look.bg, borderColor: look.border }]}>
+    <Box gap="m">
+      {/* Fixed height whatever the state, so WARMUP -> BASELINING -> LOW never moves the charts. */}
+      <Box
+        height={164}
+        justifyContent="center"
+        borderRadius="l"
+        borderWidth={3}
+        paddingHorizontal="l"
+        style={{ backgroundColor: look.bg, borderColor: look.border }}
+      >
         <Text
-          style={[styles.word, { color: look.fg, fontSize: look.big ? 76 : 40 }]}
+          variant="stateWord"
           numberOfLines={1}
           adjustsFontSizeToFit
+          style={{ color: look.fg, fontSize: look.big ? 64 : 36, lineHeight: look.big ? 70 : 44 }}
         >
           {look.word}
         </Text>
-        <Text style={[styles.sub, { color: look.fg }]}>{look.sub}</Text>
-        {look.progress !== null && (
-          <View style={[styles.progress, { backgroundColor: theme.bg }]}>
-            <View
-              style={[styles.progressBar, { width: `${look.progress * 100}%`, backgroundColor: theme.text }]}
-            />
-          </View>
-        )}
-        {look.lpg && <Text style={[styles.lpgLine, { color: look.fg }]}>{look.lpg}</Text>}
-      </View>
+        <Text variant="stateSub" numberOfLines={1} style={{ color: look.fg }}>
+          {look.sub}
+        </Text>
+        {/* The third line is either the progress bar or the LPG line; the slot is always there. */}
+        <Box height={28} justifyContent="center" marginTop="xs">
+          {look.progress !== null ? (
+            <Box height={12} borderRadius="pill" overflow="hidden" style={{ backgroundColor: theme.bg }}>
+              <Box height="100%" style={{ width: `${look.progress * 100}%`, backgroundColor: theme.text }} />
+            </Box>
+          ) : look.lpg ? (
+            <Text variant="stateLine" numberOfLines={1} style={{ color: look.fg, opacity: 0.95 }}>
+              {look.lpg}
+            </Text>
+          ) : null}
+        </Box>
+      </Box>
 
-      <View style={styles.chartBlock}>
+      <Box>
         <Legend
-          theme={theme}
           items={[
             ['CH4', theme.ch4],
             ['LPG', theme.lpg],
@@ -139,11 +153,10 @@ export function LiveScreen({
           height={CHART_HEIGHT}
           theme={theme}
         />
-      </View>
+      </Box>
 
-      <View style={styles.chartBlock}>
+      <Box>
         <Legend
-          theme={theme}
           items={[
             ['CH4 peak', theme.ch4],
             ['baseline', theme.baseline],
@@ -158,30 +171,29 @@ export function LiveScreen({
           height={OVERVIEW_HEIGHT}
           theme={theme}
         />
-      </View>
+      </Box>
 
-      <View style={styles.env}>
+      <Box flexDirection="row" flexWrap="wrap" gap="s">
         {cells.map(([k, v]) => (
-          <View key={k} style={[styles.envCell, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <Text style={[styles.envKey, { color: theme.textMuted }]}>{k}</Text>
-            <Text style={[styles.envVal, { color: theme.text }]}>{v}</Text>
-          </View>
+          <Box
+            key={k}
+            flexGrow={1}
+            flexBasis="30%"
+            borderRadius="s"
+            borderWidth={1}
+            padding="s"
+            gap="xxs"
+            style={{ backgroundColor: theme.surface, borderColor: theme.border }}
+          >
+            <Text variant="cellKey" numberOfLines={1}>
+              {k}
+            </Text>
+            <Text variant="cellValue" numberOfLines={1} adjustsFontSizeToFit>
+              {v}
+            </Text>
+          </Box>
         ))}
-      </View>
-    </View>
+      </Box>
+    </Box>
   );
 }
-
-const styles = StyleSheet.create({
-  card: { borderRadius: 16, paddingHorizontal: 18, paddingVertical: 16, marginBottom: 12, borderWidth: 3 },
-  word: { fontWeight: '900', letterSpacing: -1 },
-  sub: { fontSize: 26, fontWeight: '700', marginTop: 6, fontVariant: ['tabular-nums'] },
-  lpgLine: { fontSize: 20, fontWeight: '600', marginTop: 8, opacity: 0.95 },
-  progress: { height: 14, borderRadius: 7, marginTop: 12, overflow: 'hidden' },
-  progressBar: { height: '100%' },
-  chartBlock: { marginBottom: 12 },
-  env: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  envCell: { flexGrow: 1, flexBasis: '30%', borderRadius: 10, borderWidth: 1, padding: 8 },
-  envKey: { fontSize: 13, fontWeight: '600' },
-  envVal: { fontSize: 19, fontWeight: '700', fontVariant: ['tabular-nums'] },
-});

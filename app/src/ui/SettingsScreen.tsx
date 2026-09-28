@@ -3,10 +3,11 @@
 // value ("0.") does not get sanitised out from under the keyboard.
 
 import { useEffect, useState } from 'react';
-import { StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Switch, TextInput, type StyleProp, type TextStyle } from 'react-native';
 import type { AppSettings } from '../core/settings';
 import type { AppController, UiState } from '../controller';
 import { Btn, H2, H3, Hint } from './components';
+import { Box, Text, borderRadii, sizes, spacing } from './restyle';
 import type { Theme } from './theme';
 
 interface Field {
@@ -21,6 +22,12 @@ interface Field {
 
 const FIELDS: Field[] = [
   { key: 'simulate', label: 'Simulated device', hint: 'Fake board with random plumes, for testing' },
+  {
+    key: 'usbBridge',
+    label: 'USB bridge via PC',
+    hint: 'Board plugged into a PC running tools/serial_bridge.py. Always used in Expo Go (no Bluetooth there)',
+  },
+  { key: 'bridgeHost', label: 'Bridge PC address', hint: 'Blank = the PC running Expo' },
   { key: 'lightTheme', label: 'Light theme', hint: 'Easier to read in direct sun' },
   { key: 'keepAwake', label: 'Keep screen awake', hint: 'While connected or recording' },
   { key: 'driveLed', label: 'Drive board LED', hint: 'Green / amber / red from CH4 class' },
@@ -32,6 +39,22 @@ const FIELDS: Field[] = [
   { key: 'classRangeFloorMv', label: 'Class range floor (mV)', min: 0 },
   { key: 'intervalMs', label: 'Sample interval (ms)', hint: '100–5000, sent to the board', min: 100, max: 5000 },
 ];
+
+function inputStyle(theme: Theme, wide: boolean): StyleProp<TextStyle> {
+  return {
+    minWidth: wide ? 168 : 96,
+    minHeight: sizes.input,
+    borderWidth: 2,
+    borderRadius: borderRadii.s,
+    paddingHorizontal: spacing.m,
+    fontSize: 17,
+    fontWeight: '700',
+    textAlign: 'right',
+    color: theme.text,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
+  };
+}
 
 function NumberField({
   field,
@@ -70,7 +93,41 @@ function NumberField({
       keyboardType="decimal-pad"
       returnKeyType="done"
       selectTextOnFocus
-      style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface }]}
+      style={inputStyle(theme, false)}
+    />
+  );
+}
+
+function TextField({
+  value,
+  theme,
+  placeholder,
+  onCommit,
+}: {
+  value: string;
+  theme: Theme;
+  placeholder?: string;
+  onCommit: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+  const commit = () => onCommit(draft.trim());
+  return (
+    <TextInput
+      value={draft}
+      onChangeText={setDraft}
+      onBlur={commit}
+      onSubmitEditing={commit}
+      placeholder={placeholder}
+      placeholderTextColor={theme.textMuted}
+      keyboardType="url"
+      autoCapitalize="none"
+      autoCorrect={false}
+      returnKeyType="done"
+      selectTextOnFocus
+      style={[inputStyle(theme, true), { fontSize: 16, fontWeight: '600' }]}
     />
   );
 }
@@ -88,21 +145,37 @@ export function SettingsScreen({
   const sim = state.linkKind === 'sim';
 
   return (
-    <View>
-      <H2 theme={theme}>Settings</H2>
+    <Box>
+      <H2>Settings</H2>
       {FIELDS.map((f) => {
         const v = settings[f.key];
         return (
-          <View key={f.key} style={[styles.row, { borderColor: theme.border }]}>
-            <View style={styles.labelBox}>
-              <Text style={[styles.label, { color: theme.text }]}>{f.label}</Text>
-              {f.hint && <Text style={[styles.hint, { color: theme.textMuted }]}>{f.hint}</Text>}
-            </View>
+          <Box
+            key={f.key}
+            flexDirection="row"
+            alignItems="center"
+            justifyContent="space-between"
+            gap="m"
+            paddingVertical="m"
+            borderBottomWidth={1}
+            style={{ borderBottomColor: theme.border }}
+          >
+            <Box flexShrink={1} flexGrow={1} gap="xxs">
+              <Text variant="label">{f.label}</Text>
+              {f.hint && <Text variant="labelHint">{f.hint}</Text>}
+            </Box>
             {typeof v === 'boolean' ? (
               <Switch
                 value={v}
                 onValueChange={(next) => void controller.updateSetting(f.key, next as never)}
                 trackColor={{ true: theme.good, false: theme.border }}
+              />
+            ) : typeof v === 'string' ? (
+              <TextField
+                value={v}
+                theme={theme}
+                placeholder="auto"
+                onCommit={(text) => void controller.updateSetting(f.key, text as never)}
               />
             ) : (
               <NumberField
@@ -112,61 +185,34 @@ export function SettingsScreen({
                 onCommit={(stored) => void controller.updateSetting(f.key, stored as never)}
               />
             )}
-          </View>
+          </Box>
         );
       })}
 
       {sim && (
-        <View>
-          <H3 theme={theme}>Simulator</H3>
-          <View style={styles.btnRow}>
+        <Box>
+          <H3>Simulator</H3>
+          <Box flexDirection="row" gap="s" flexWrap="wrap" marginVertical="s">
             <Btn theme={theme} title="Press BOOT" onPress={() => controller.simPressButton()} />
             <Btn theme={theme} title="Drop link" onPress={() => controller.simDropLink()} />
             <Btn theme={theme} title="Toggle USB" onPress={() => controller.simToggleUsb()} />
             <Btn theme={theme} title="Toggle heaters" onPress={() => controller.simToggleHeaters()} />
-          </View>
-          <Hint theme={theme}>
-            Board LED (opcode 0x03): rgb({(state.simLed ?? [0, 0, 0]).join(', ')})
-          </Hint>
-        </View>
+          </Box>
+          <Hint>Board LED (opcode 0x03): rgb({(state.simLed ?? [0, 0, 0]).join(', ')})</Hint>
+        </Box>
       )}
 
-      <View style={styles.btnRow}>
+      <Box flexDirection="row" gap="s" flexWrap="wrap" marginVertical="m">
         <Btn theme={theme} title="Identify (blink LED)" onPress={() => controller.identify()} />
-      </View>
+      </Box>
 
       {state.linked && (
-        <Hint theme={theme}>
+        <Hint>
           {`${state.linkName ?? '?'} · fw ${info.fw} · board ${info.board} · RL ${info.rl_ohm} Ω · ` +
             `tap ×${info.tap_ratio} · VC ${info.vc_mv} mV · ${info.interval_ms} ms` +
             (info.heater_mv ? ` · heater ${info.heater_mv} mV` : '')}
         </Hint>
       )}
-    </View>
+    </Box>
   );
 }
-
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-  },
-  labelBox: { flexShrink: 1, flexGrow: 1 },
-  label: { fontSize: 18, fontWeight: '600' },
-  hint: { fontSize: 14, marginTop: 2 },
-  input: {
-    minWidth: 96,
-    minHeight: 48,
-    borderWidth: 2,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    fontSize: 18,
-    fontWeight: '700',
-    textAlign: 'right',
-  },
-  btnRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginVertical: 8 },
-});

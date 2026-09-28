@@ -11,7 +11,7 @@ export interface LinkHandlers {
 }
 
 export interface DeviceLink {
-  readonly kind: 'ble' | 'sim';
+  readonly kind: 'ble' | 'sim' | 'bridge';
   readonly name: string;
   /** Connect to the device this link was created for. */
   connect(): Promise<void>;

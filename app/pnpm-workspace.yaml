@@ -1,0 +1,6 @@
+# pnpm settings (pnpm >= 10 reads these here, not from package.json's "pnpm" key).
+# Dependencies allowed to run install scripts. Anything else is ignored, and
+# a newer pnpm fails the install if an ignored script is needed, which is what
+# broke the first EAS cloud build.
+onlyBuiltDependencies:
+  - esbuild

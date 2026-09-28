@@ -1,10 +1,11 @@
 // Shared bits of chrome: pills, banners, buttons, section headings, toast.
-// The sizes are the web app's: 48–64 px targets, 17–26 px type, readable at
-// arm's length with gloves on.
+// Layout and type come from ui/restyle.ts (spacing steps, text variants);
+// the `theme` prop is the colour palette, kept for callers that also paint SVG.
 
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, type StyleProp, type ViewStyle } from 'react-native';
 import type { LinkStatus } from '../services/device';
+import { Box, Text, borderRadii, sizes, spacing, useTheme } from './restyle';
 import type { Severity, Theme } from './theme';
 
 export function Pill({
@@ -14,6 +15,7 @@ export function Pill({
   ghost,
   onPress,
   tint,
+  flex,
 }: {
   theme: Theme;
   children: React.ReactNode;
@@ -21,6 +23,8 @@ export function Pill({
   ghost?: boolean;
   onPress?: () => void;
   tint?: string;
+  /** Let this pill take the slack in a row (its text is ellipsised, the others never wrap). */
+  flex?: number;
 }) {
   const dotColour =
     status === 'connected'
@@ -31,32 +35,60 @@ export function Pill({
           ? theme.critical
           : theme.textMuted;
   const body = (
-    <View
-      style={[
-        styles.pill,
-        { borderColor: tint ?? theme.border, backgroundColor: ghost ? 'transparent' : theme.surface },
-      ]}
+    <Box
+      flexDirection="row"
+      alignItems="center"
+      gap="s"
+      minHeight={36}
+      paddingHorizontal="m"
+      paddingVertical="xs"
+      borderRadius="pill"
+      borderWidth={2}
+      flexShrink={1}
+      style={{ borderColor: tint ?? theme.border, backgroundColor: ghost ? 'transparent' : theme.surface }}
     >
-      {status !== undefined && <View style={[styles.dot, { backgroundColor: dotColour }]} />}
-      <Text style={[styles.pillText, { color: tint ?? theme.text }]} numberOfLines={1}>
+      {status !== undefined && <Box width={12} height={12} borderRadius="pill" style={{ backgroundColor: dotColour }} />}
+      <Text variant="pill" numberOfLines={1} flexShrink={1} style={tint ? { color: tint } : undefined}>
         {children}
       </Text>
-    </View>
+    </Box>
   );
-  return onPress ? <Pressable onPress={onPress}>{body}</Pressable> : body;
+  const wrapped = onPress ? <Pressable onPress={onPress}>{body}</Pressable> : body;
+  return flex !== undefined ? <Box flex={flex}>{wrapped}</Box> : wrapped;
 }
 
-export function Banner({ theme, severity, text }: { theme: Theme; severity: Severity; text: string }) {
-  const style =
+/** One line, fixed height: it lives in the status strip, which never changes size. */
+export function Banner({
+  theme,
+  severity,
+  text,
+  tint,
+}: {
+  theme: Theme;
+  severity: Severity;
+  text: string;
+  /** Border/text colour override (the recording indicator). */
+  tint?: string;
+}) {
+  const look =
     severity === 'critical'
-      ? { backgroundColor: theme.critical, borderColor: theme.critical, color: theme.onDark, fontSize: 18 }
+      ? { bg: theme.critical, border: theme.critical, variant: 'bannerCritical' as const }
       : severity === 'warning'
-        ? { backgroundColor: 'transparent', borderColor: theme.warning, color: theme.text, fontSize: 18 }
-        : { backgroundColor: 'transparent', borderColor: theme.border, color: theme.textMuted, fontSize: 16 };
+        ? { bg: 'transparent', border: theme.warning, variant: 'bannerWarning' as const }
+        : { bg: 'transparent', border: theme.border, variant: 'bannerInfo' as const };
   return (
-    <View style={[styles.banner, { backgroundColor: style.backgroundColor, borderColor: style.borderColor }]}>
-      <Text style={{ color: style.color, fontSize: style.fontSize, fontWeight: '700' }}>{text}</Text>
-    </View>
+    <Box
+      height={36}
+      justifyContent="center"
+      paddingHorizontal="m"
+      borderRadius="s"
+      borderWidth={2}
+      style={{ backgroundColor: look.bg, borderColor: tint ?? look.border }}
+    >
+      <Text variant={look.variant} numberOfLines={1} style={tint ? { color: tint } : undefined}>
+        {text}
+      </Text>
+    </Box>
   );
 }
 
@@ -93,29 +125,50 @@ export function Btn({
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [
-        styles.btn,
-        big && styles.btnBig,
-        { backgroundColor: skin.bg, borderColor: skin.border, opacity: disabled ? 0.45 : pressed ? 0.85 : 1 },
+        {
+          minHeight: big ? sizes.tapBig : sizes.tap,
+          paddingHorizontal: big ? spacing.s : spacing.l,
+          paddingVertical: spacing.s,
+          borderRadius: borderRadii.m,
+          borderWidth: 2,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: skin.bg,
+          borderColor: skin.border,
+          opacity: disabled ? 0.45 : pressed ? 0.85 : 1,
+        },
         style,
       ]}
     >
-      <Text style={[styles.btnText, big && styles.btnTextBig, { color: skin.fg }]} numberOfLines={1}>
+      <Text variant={big ? 'buttonBig' : 'button'} numberOfLines={1} style={{ color: skin.fg }}>
         {title}
       </Text>
     </Pressable>
   );
 }
 
-export function Hint({ theme, children }: { theme: Theme; children: React.ReactNode }) {
-  return <Text style={[styles.hint, { color: theme.textMuted }]}>{children}</Text>;
+export function Hint({ children }: { theme?: Theme; children: React.ReactNode }) {
+  return (
+    <Text variant="hint" marginVertical="xs">
+      {children}
+    </Text>
+  );
 }
 
-export function H2({ theme, children }: { theme: Theme; children: React.ReactNode }) {
-  return <Text style={[styles.h2, { color: theme.text }]}>{children}</Text>;
+export function H2({ children }: { theme?: Theme; children: React.ReactNode }) {
+  return (
+    <Text variant="h2" marginTop="s" marginBottom="s">
+      {children}
+    </Text>
+  );
 }
 
-export function H3({ theme, children }: { theme: Theme; children: React.ReactNode }) {
-  return <Text style={[styles.h3, { color: theme.text }]}>{children}</Text>;
+export function H3({ children }: { theme?: Theme; children: React.ReactNode }) {
+  return (
+    <Text variant="h3" marginTop="l" marginBottom="xs">
+      {children}
+    </Text>
+  );
 }
 
 export function Toast({
@@ -134,67 +187,38 @@ export function Toast({
     return () => clearTimeout(t);
   }, [id, onDone]);
   return (
-    <View pointerEvents="none" style={styles.toastWrap}>
-      <Text style={[styles.toast, { backgroundColor: theme.text, color: theme.bg }]}>{text}</Text>
-    </View>
+    <Box pointerEvents="none" position="absolute" left={0} right={0} bottom={spacing.xl} alignItems="center">
+      <Box
+        paddingHorizontal="l"
+        paddingVertical="m"
+        borderRadius="m"
+        maxWidth="90%"
+        style={{ backgroundColor: theme.text }}
+      >
+        <Text variant="toast">{text}</Text>
+      </Box>
+    </Box>
   );
 }
 
 /** The legend strip above a chart. */
-export function Legend({ theme, items, note }: { theme: Theme; items: [string, string][]; note: string }) {
+export function Legend({ items, note }: { theme?: Theme; items: [string, string][]; note: string }) {
   return (
-    <View style={styles.legend}>
+    <Box flexDirection="row" alignItems="center" gap="m" paddingBottom="xs">
       {items.map(([label, colour]) => (
-        <View key={label} style={styles.legendItem}>
-          <View style={[styles.swatch, { backgroundColor: colour }]} />
-          <Text style={{ color: theme.textMuted, fontSize: 15, fontWeight: '600' }}>{label}</Text>
-        </View>
+        <Box key={label} flexDirection="row" alignItems="center" gap="xs">
+          <Box width={12} height={12} borderRadius="xs" style={{ backgroundColor: colour }} />
+          <Text variant="legend">{label}</Text>
+        </Box>
       ))}
-      <Text style={{ color: theme.textMuted, fontSize: 15, marginLeft: 'auto' }}>{note}</Text>
-    </View>
+      <Text variant="legend" style={{ marginLeft: 'auto', fontWeight: '400' }}>
+        {note}
+      </Text>
+    </Box>
   );
 }
 
-export const styles = StyleSheet.create({
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    minHeight: 40,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 2,
-  },
-  pillText: { fontSize: 17, fontWeight: '600' },
-  dot: { width: 14, height: 14, borderRadius: 7 },
-  banner: { marginBottom: 8, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 10, borderWidth: 2 },
-  btn: {
-    minHeight: 48,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnBig: { minHeight: 64, paddingHorizontal: 6 },
-  btnText: { fontSize: 18, fontWeight: '700' },
-  btnTextBig: { fontSize: 19 },
-  hint: { fontSize: 15, lineHeight: 20, marginVertical: 4 },
-  h2: { fontSize: 28, fontWeight: '700', marginVertical: 8 },
-  h3: { fontSize: 21, fontWeight: '700', marginTop: 12, marginBottom: 4 },
-  toastWrap: { position: 'absolute', left: 0, right: 0, bottom: 24, alignItems: 'center' },
-  toast: {
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 12,
-    fontSize: 18,
-    fontWeight: '700',
-    overflow: 'hidden',
-    maxWidth: '90%',
-  },
-  legend: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  swatch: { width: 14, height: 14, borderRadius: 3 },
-});
+/** Where a plain RN style object needs the same steps as Box (inputs, pressables). */
+export function useSpacing() {
+  return useTheme().spacing;
+}

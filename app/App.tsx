@@ -1,8 +1,9 @@
 // Root component: top bar, banners, the three views and the action dock.
-// Everything that thinks lives in src/app/controller.ts; this is layout.
+// Everything that thinks lives in src/controller.ts; this is layout, on the
+// Restyle spacing scale (src/ui/restyle.ts).
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { AppController } from './src/controller';
@@ -16,7 +17,8 @@ import { SettingsScreen } from './src/ui/SettingsScreen';
 import { SurveysScreen } from './src/ui/SurveysScreen';
 import { Banner, Btn, Pill, Toast } from './src/ui/components';
 import { fmtDuration } from './src/ui/format';
-import { TAP, themeFor, type Severity } from './src/ui/theme';
+import { Box, ThemeProvider, darkTheme, lightTheme, spacing } from './src/ui/restyle';
+import { themeFor, type Severity } from './src/ui/theme';
 
 type ViewName = 'live' | 'surveys' | 'settings';
 const VIEWS: ViewName[] = ['live', 'surveys', 'settings'];
@@ -35,9 +37,11 @@ export default function App() {
 function Splash() {
   const theme = themeFor(false);
   return (
-    <View style={[styles.splash, { backgroundColor: theme.bg }]}>
-      <ActivityIndicator size="large" color={theme.text} />
-    </View>
+    <ThemeProvider theme={darkTheme}>
+      <Box flex={1} alignItems="center" justifyContent="center" style={{ backgroundColor: theme.bg }}>
+        <ActivityIndicator size="large" color={theme.text} />
+      </Box>
+    </ThemeProvider>
   );
 }
 
@@ -50,7 +54,8 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
 
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const [view, setView] = useState<ViewName>('live');
-  const theme = themeFor(state.settings.lightTheme);
+  const light = state.settings.lightTheme;
+  const theme = themeFor(light);
 
   const connected = state.linked && state.linkStatus === 'connected';
   const f = state.lastSample?.flags;
@@ -72,6 +77,8 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
       `Recording without GPS (${state.gpsStatus}${state.gpsDetail ? ': ' + state.gpsDetail : ''}).`,
     ]);
   if (state.settings.simulate) banners.push(['info', 'Simulator mode: data is not real.']);
+  if (state.linked && state.linkKind === 'bridge')
+    banners.push(['info', 'USB bridge: readings relayed from the PC over Wi‑Fi. Board controls are unavailable.']);
   if (state.droppedPackets > 0 || state.badPackets > 0)
     banners.push([
       'info',
@@ -87,6 +94,13 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
           ? 'Reconnecting…'
           : 'Not connected';
 
+  // Quiet baseline for the status strip when nothing needs saying.
+  const statusLine = connected
+    ? `Streaming every ${state.info.interval_ms} ms · ${state.linkKind === 'bridge' ? 'USB bridge' : state.linkKind === 'sim' ? 'simulator' : 'Bluetooth'}`
+    : state.linked
+      ? state.linkDetail || 'Connecting…'
+      : 'Tap Connect to find your sensor';
+
   const gpsText = (() => {
     const fix = state.gpsFix;
     if (state.gpsStatus === 'ok' && fix) {
@@ -100,120 +114,118 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
   })();
 
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={[styles.root, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
-        <StatusBar style={state.settings.lightTheme ? 'dark' : 'light'} />
-        <View style={styles.inner}>
-          <View style={styles.topbar}>
-            <Pill
-              theme={theme}
-              status={state.linkStatus}
-              onPress={() => (state.linked ? undefined : controller.connect())}
-            >
-              {linkText}
-            </Pill>
-            {state.lastSample && state.linked && (
+    <ThemeProvider theme={light ? lightTheme : darkTheme}>
+      <SafeAreaProvider>
+        <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }} edges={['top', 'bottom']}>
+          <StatusBar style={light ? 'dark' : 'light'} />
+          <Box flex={1} width="100%" maxWidth={720} alignSelf="center" paddingHorizontal="l">
+            {/* One fixed-height row: the pills change text constantly and must not wrap. */}
+            <Box flexDirection="row" gap="s" alignItems="center" height={52}>
+              <Pill
+                theme={theme}
+                status={state.linkStatus}
+                onPress={() => (state.linked ? undefined : controller.connect())}
+                flex={1}
+              >
+                {linkText}
+              </Pill>
               <Pill theme={theme} ghost>
-                {`🔋 ${batteryPercent(state.lastSample.vbatMv)}%` +
-                  (state.lastSample.flags.charging
-                    ? ' ⚡charging'
-                    : state.lastSample.flags.usbPower
-                      ? ' USB'
-                      : '')}
+                {state.lastSample && state.linked
+                  ? `🔋 ${batteryPercent(state.lastSample.vbatMv)}%` +
+                    (state.lastSample.flags.charging ? ' ⚡' : state.lastSample.flags.usbPower ? ' USB' : '')
+                  : '🔋 —'}
               </Pill>
-            )}
-            <Pill theme={theme} ghost>
-              {gpsText}
-            </Pill>
-            {state.recording && (
-              <Pill theme={theme} ghost tint={theme.critical}>
-                {`● REC ${fmtDuration(Date.now() - state.recStartedAt)} · ${state.recRows} rows`}
+              <Pill theme={theme} ghost>
+                {gpsText}
               </Pill>
-            )}
-          </View>
+            </Box>
 
-          {banners.map(([severity, text]) => (
-            <Banner key={text} theme={theme} severity={severity} text={text} />
-          ))}
-
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-          >
-            {view === 'live' && <LiveScreen state={state} controller={controller} theme={theme} />}
-            {view === 'surveys' && <SurveysScreen state={state} controller={controller} theme={theme} />}
-            {view === 'settings' && <SettingsScreen state={state} controller={controller} theme={theme} />}
-          </ScrollView>
-
-          <View style={styles.dock}>
-            <View style={styles.actions}>
-              <Btn
-                theme={theme}
-                big
-                title={state.linked ? 'Disconnect' : 'Connect'}
-                onPress={() => controller.toggleConnection()}
-                style={styles.action}
-              />
-              <Btn
-                theme={theme}
-                big
-                title="Re-zero"
-                disabled={!state.linked || state.lastOut?.state === 'HEATER_OFF'}
-                onPress={() => controller.requestRezero()}
-                style={styles.action}
-              />
-              <Btn
-                theme={theme}
-                big
-                title={state.recording ? '■ Stop' : '● Record'}
-                variant={state.recording ? 'recording' : 'record'}
-                onPress={() => void controller.toggleRecording()}
-                style={styles.actionWide}
-              />
-            </View>
-            <View style={styles.tabs}>
-              {VIEWS.map((v) => (
-                <Btn
-                  key={v}
+            {/* Status strip: always the same height, so messages coming and going never shift the layout. */}
+            <Box height={44} justifyContent="center" paddingBottom="s">
+              {state.recording ? (
+                <Banner
                   theme={theme}
-                  title={VIEW_LABEL[v]}
-                  variant={view === v ? 'primary' : 'default'}
-                  onPress={() => setView(v)}
-                  style={styles.tab}
+                  severity="info"
+                  tint={theme.critical}
+                  text={`● REC ${fmtDuration(Date.now() - state.recStartedAt)} · ${state.recRows} rows${
+                    banners.length ? ` · ${banners[0][1]}` : ''
+                  }`}
                 />
-              ))}
-            </View>
-          </View>
-        </View>
+              ) : banners.length > 0 ? (
+                <Banner
+                  theme={theme}
+                  severity={banners[0][0]}
+                  text={banners[0][1] + (banners.length > 1 ? `  (+${banners.length - 1})` : '')}
+                />
+              ) : (
+                <Banner theme={theme} severity="info" text={statusLine} />
+              )}
+            </Box>
 
-        <DevicePicker state={state} controller={controller} theme={theme} />
-        {state.toast && (
-          <Toast
-            theme={theme}
-            text={state.toast.text}
-            id={state.toast.id}
-            onDone={(id) => controller.dismissToast(id)}
-          />
-        )}
-      </SafeAreaView>
-    </SafeAreaProvider>
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingBottom: spacing.l }}
+              keyboardShouldPersistTaps="handled"
+            >
+              {view === 'live' && <LiveScreen state={state} controller={controller} theme={theme} />}
+              {view === 'surveys' && <SurveysScreen state={state} controller={controller} theme={theme} />}
+              {view === 'settings' && <SettingsScreen state={state} controller={controller} theme={theme} />}
+            </ScrollView>
+
+            <Box gap="s" paddingTop="s" paddingBottom="xs" borderTopWidth={1} style={{ borderTopColor: theme.border }}>
+              <Box flexDirection="row" gap="s">
+                <Btn
+                  theme={theme}
+                  big
+                  title={state.linked ? 'Disconnect' : 'Connect'}
+                  onPress={() => controller.toggleConnection()}
+                  style={{ flex: 1 }}
+                />
+                <Btn
+                  theme={theme}
+                  big
+                  title="Re-zero"
+                  disabled={!state.linked || state.lastOut?.state === 'HEATER_OFF'}
+                  onPress={() => controller.requestRezero()}
+                  style={{ flex: 1 }}
+                />
+                <Btn
+                  theme={theme}
+                  big
+                  title={state.recording ? '■ Stop' : '● Record'}
+                  variant={state.recording ? 'recording' : 'record'}
+                  onPress={() => void controller.toggleRecording()}
+                  style={{ flex: 1.25 }}
+                />
+              </Box>
+              <Box flexDirection="row" gap="s">
+                {VIEWS.map((v) => (
+                  <Btn
+                    key={v}
+                    theme={theme}
+                    title={VIEW_LABEL[v]}
+                    variant={view === v ? 'primary' : 'default'}
+                    onPress={() => setView(v)}
+                    style={{ flex: 1 }}
+                  />
+                ))}
+              </Box>
+            </Box>
+          </Box>
+
+          <DevicePicker state={state} controller={controller} theme={theme} />
+          {state.toast && (
+            <Toast
+              theme={theme}
+              text={state.toast.text}
+              id={state.toast.id}
+              onDone={(id) => controller.dismissToast(id)}
+            />
+          )}
+        </SafeAreaView>
+      </SafeAreaProvider>
+    </ThemeProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  root: { flex: 1 },
-  splash: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  inner: { flex: 1, width: '100%', maxWidth: 720, alignSelf: 'center', paddingHorizontal: 12 },
-  topbar: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', paddingVertical: 8 },
-  scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 12 },
-  dock: { paddingBottom: 8, gap: 6 },
-  actions: { flexDirection: 'row', gap: 8, paddingVertical: 8 },
-  action: { flex: 1 },
-  actionWide: { flex: 1.25 },
-  tabs: { flexDirection: 'row', gap: 6 },
-  tab: { flex: 1, minHeight: TAP },
-});
 
 export type { ViewName };

@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@shopify/restyle": "^2.4.5",
     "expo": "~57.0.23",
     "expo-dev-client": "~57.0.19",
     "expo-file-system": "~57.0.7",
@@ -43,9 +44,5 @@
   "engines": {
     "node": "^20.19.4 || ^22.13.0 || ^24.3.0 || >=25"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  }
+  "packageManager": "pnpm@10.25.0"
 }

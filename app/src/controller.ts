@@ -7,7 +7,8 @@
 // useSyncExternalStore and only sees an immutable snapshot, published at most once
 // per animation frame.
 
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, NativeModules, type AppStateStatus } from 'react-native';
+import { bridgeUrl } from './core/bridge';
 import { ChartBuffer, type ChartPoint } from './core/chartData';
 import { formatCsvRow, type GpsFix } from './core/csv';
 import { Processor, ledColour, type ProcessorOutput } from './core/processor';
@@ -22,8 +23,9 @@ import {
 } from './core/protocol';
 import { rsOhm, vrlFromTap } from './core/sensor';
 import type { AppSettings } from './core/settings';
-import { scanForSensors, type ScanHandle } from './services/ble';
+import { bleAvailable, scanForSensors, type ScanHandle } from './services/ble';
 import { BleDeviceLink } from './services/bleDevice';
+import { BridgeDeviceLink } from './services/bridgeDevice';
 import type { DeviceLink, LinkHandlers, LinkStatus, ScannedDevice } from './services/device';
 import { GpsService, type GpsStatus } from './services/gps';
 import { setKeepAwake } from './services/keepAwake';
@@ -47,7 +49,7 @@ export interface UiState {
   linkStatus: LinkStatus;
   linkDetail: string;
   linkName: string | null;
-  linkKind: 'ble' | 'sim' | null;
+  linkKind: 'ble' | 'sim' | 'bridge' | null;
   /** A link object exists (connected, connecting or retrying). */
   linked: boolean;
   lastSample: Sample | null;
@@ -210,11 +212,28 @@ export class AppController {
     }
   };
 
-  /** Connect: the simulator starts straight away, a real board opens the picker. */
+  /**
+   * Connect: the simulator starts straight away, the USB bridge connects to
+   * the PC, a real board over BLE opens the picker. Without the BLE native
+   * module (Expo Go) the bridge is the only real link, so it is used even when
+   * the setting is off.
+   */
   connect(): void {
     if (this.link) return;
-    if (this.state.settings.simulate) {
+    const { settings } = this.state;
+    if (settings.simulate) {
       void this.openLink(new SimDeviceLink(this.handlers, this.onLinkReady));
+      return;
+    }
+    if (settings.usbBridge || !bleAvailable()) {
+      const scriptUrl = (NativeModules.SourceCode as { scriptURL?: string } | undefined)?.scriptURL;
+      const url = bridgeUrl(settings.bridgeHost, scriptUrl);
+      if (!url) {
+        this.toast('Set the bridge PC address in Settings');
+        return;
+      }
+      if (!settings.usbBridge) this.toast('No Bluetooth in Expo Go: using the USB bridge');
+      void this.openLink(new BridgeDeviceLink(url, this.handlers, this.onLinkReady));
       return;
     }
     this.startScan();
@@ -312,10 +331,9 @@ export class AppController {
       button: s.flags.button,
       heatersOff: s.flags.heatersOff,
     });
-    if (out.rebooted) {
-      this.chart.clear();
-      this.toast('Sensor restarted: warming up again');
-    }
+    // A board restart resets the processor to WARMUP, which the state card
+    // already shows; no toast, it fired on every bench reflash and power cycle.
+    if (out.rebooted) this.chart.clear();
     if (s.flags.button) this.toast('BOOT pressed: re-zeroing baseline');
 
     const baselineValid = out.state === 'BASELINING' || out.state === 'RUNNING';
@@ -431,7 +449,7 @@ export class AppController {
     this.chart.spanMs = settings.classWindowMs;
     if (key === 'intervalMs' && this.link) void this.link.control(encodeSetInterval(settings.intervalMs));
     if (key === 'driveLed') this.lastLedKey = '';
-    if (key === 'simulate' && this.link) {
+    if ((key === 'simulate' || key === 'usbBridge' || key === 'bridgeHost') && this.link) {
       await this.disconnect();
       this.toast('Device mode changed: tap Connect');
     }
