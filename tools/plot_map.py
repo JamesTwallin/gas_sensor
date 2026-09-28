@@ -39,6 +39,8 @@ Usage:
   python tools/plot_map.py --diff                   # CH4/LPG differential map (fossil vs biogenic)
   python tools/plot_map.py --diff a.csv b.csv       # differential over just these logs
   python tools/plot_map.py --diff --zoom            # differential cropped to the leak hotspot
+  python tools/plot_map.py --deriv                  # rate-of-change map: where the signal SPIKES
+  python tools/plot_map.py --deriv a.csv b.csv      # rate of change over just these logs
 
 With --combine the named logs (or every *.csv in tools/data/ if none are named)
 are loaded individually -- so each log's own warm-up drop, jitter filter and GPS
@@ -56,6 +58,13 @@ red = LPG-rich (heavier-HC / fossil-leaning), blue = CH4-rich (biogenic-leaning)
 Cells are shown only where the rig made several separate passes (so one-off
 traffic puffs drop out) and where there's a real signal to type. A side panel
 shows the (ch4, lpg) scatter with the fitted common-mode line. See docs/sensors.md.
+
+With --deriv the pooled logs are rendered as one derivative.png: the FIRST TIME
+DERIVATIVE of the signal, d(VOUT)/dt in mV/s, which is what makes a spike obvious.
+A MOX element wanders slowly (drift, warming, weather) but a plume you walk into
+arrives in seconds -- differentiating flattens the slow wander to ~0 and leaves the
+sharp arrivals standing up on their own, so no baseline has to be guessed at. The
+map colours each ground cell by the steepest RISE seen there.
 """
 
 import glob
@@ -122,7 +131,7 @@ MIN_SATS = 5              # rows with fewer locked satellites are dropped
 # rather than a zigzag. The window is in samples (~1/s logging), so 5 averages
 # roughly +-2 s of fixes. Set to 1 to disable smoothing.
 GPS_SMOOTH_WINDOW = 17
-BIN_SIZE_M =2     # heatmap cell size on the ground (m). Each cell shows the
+BIN_SIZE_M =5     # heatmap cell size on the ground (m). Each cell shows the
                      # MEAN total gas of every reading that fell inside it, so
                      # passing the same spot twice averages rather than overplots.
 HEATMAP_ALPHA = 0.75 # heatmap opacity so the basemap streets show through
@@ -174,6 +183,48 @@ DIFF_DETREND = True
 # survey's composition).
 ZOOM_TOPFRAC = 0.2   # fraction of kept cells (highest residual) defining the hotspot
 ZOOM_RADIUS_M = 80   # half-width of the zoomed view (m)
+
+# --- --deriv mode (first time derivative) -----------------------------------
+# The absolute level a MOX element sits at is barely trustworthy -- it drifts with
+# the element's own history, board temperature and humidity, all of which move over
+# minutes-to-hours. What a gas cloud does instead is arrive: walk into a plume and
+# VOUT climbs within a few seconds. Differentiating separates those two timescales
+# for free -- a slow drift of a few mV/minute is ~0.05 mV/s and vanishes, while a
+# plume edge is a clear positive spike -- and unlike ch4_dev_mv it needs no baseline
+# at all. (The firmware's rolling baseline chases the signal, so it quietly eats a
+# broad plume that lingers; the derivative doesn't care how long the plume lasts,
+# only how fast it turned up.)
+#
+# Caveat worth remembering when reading the map: the derivative peaks on the plume's
+# LEADING EDGE, i.e. where you walked in, which sits upwind-ish of the source by
+# roughly half the plume's width -- it localises the encounter, not the vent.
+DERIV_COLS = ("ch4_vout_mv",)  # summed into the signal that gets differentiated
+DERIV_LABEL = "CH4 raw VOUT"
+# Slope is fitted by least squares over a centred window rather than taken as a
+# bare sample-to-sample difference: at 4 Hz a raw diff is nearly all ADC noise
+# (amplified by 1/dt = 4x), whereas a ~5 s fit matches how long a walking plume
+# transit actually takes and averages the noise down.
+DERIV_WINDOW = 21     # samples in the least-squares slope window (~5 s at 4 Hz)
+# load_track() removes rows (warm-up, weak fixes, GPS jitter), which leaves holes in
+# time. A window straddling a hole would read the step across it as a huge slope, so
+# any window spanning more than its expected duration + this much is discarded.
+DERIV_MAX_GAP_S = 3.0
+# A sample is called a spike when its slope exceeds median + K * robust sigma for
+# its own log, sigma from the MAD (1.4826*MAD) so a handful of real spikes can't
+# inflate the very threshold meant to catch them. Per-log, because each survey has
+# its own noise floor.
+DERIV_SPIKE_K = 4.0
+DERIV_CMAP = "inferno"  # sequential: only rises are coloured (vmin pinned to 0)
+# One cell's colour is the STEEPEST rise seen in it, not the mean -- averaging a
+# pass through a plume cancels the rise against the fall back out and would erase
+# exactly the event we're looking for. Scale topped at this percentile of populated
+# cells so a single extreme cell doesn't wash the rest of the map flat.
+DERIV_VMAX_PCT = 99
+# Peak-rise cells are heavily skewed: nearly all of them sit near zero and a couple
+# of real plumes are an order of magnitude up, so a linear ramp renders the whole
+# map black except those few. Gamma < 1 stretches the low end, keeping the moderate
+# rises legible without rescaling away how much bigger the big ones are.
+DERIV_GAMMA = 0.45
 
 DPI = 150
 # Esri World Imagery: free, no-token satellite/aerial tiles -- the closest legit
@@ -368,6 +419,65 @@ def signal_total(df, cols):
     for col in cols:
         total = total + pd.to_numeric(df.get(col, 0), errors="coerce").fillna(0)
     return total.to_numpy()
+
+
+def rate_of_change(t, y):
+    """First derivative dy/dt (units of y per second) along one log's samples.
+
+    Each sample's slope is the least-squares fit over a centred DERIV_WINDOW of
+    samples, computed from rolling means so it stays vectorised:
+
+        slope = (<t*y> - <t><y>) / (<t*t> - <t><t>)
+
+    which is just cov(t,y)/var(t) over the window -- the same thing a first-order
+    Savitzky-Golay derivative gives, without needing scipy. Fitting rather than
+    differencing is what keeps this readable: a bare diff at 4 Hz multiplies each
+    sample's ADC noise by 1/dt, and the result is noise with the signal buried in it.
+
+    Returns a float array, NaN where no honest slope exists: the first and last
+    half-window (no centred neighbourhood), and any window straddling a gap in the
+    logged time -- rows dropped upstream by the warm-up/sats/jitter filters leave
+    holes, and a window spanning one would otherwise read the step across the hole
+    as an enormous rate. t must be seconds and sorted ascending.
+    """
+    s_t = pd.Series(np.asarray(t, dtype=float))
+    s_y = pd.Series(np.asarray(y, dtype=float))
+    if len(s_t) < DERIV_WINDOW:
+        return np.full(len(s_t), np.nan)
+
+    roll = dict(window=DERIV_WINDOW, center=True, min_periods=DERIV_WINDOW)
+    mt = s_t.rolling(**roll).mean()
+    my = s_y.rolling(**roll).mean()
+    var = (s_t * s_t).rolling(**roll).mean() - mt * mt
+    cov = (s_t * s_y).rolling(**roll).mean() - mt * my
+    slope = cov / var.where(var > 0)   # var == 0 (all-identical timestamps) -> NaN
+
+    # Drop windows that span a hole: a clean one covers (DERIV_WINDOW-1) sample
+    # intervals, so allow that plus DERIV_MAX_GAP_S of slack before rejecting.
+    dt = float(np.nanmedian(np.diff(s_t.to_numpy())))
+    if np.isfinite(dt) and dt > 0:
+        span = s_t.rolling(**roll).max() - s_t.rolling(**roll).min()
+        slope = slope.where(span <= (DERIV_WINDOW - 1) * dt + DERIV_MAX_GAP_S)
+    return slope.to_numpy()
+
+
+def spike_threshold(slope):
+    """Robust cut-off above which a slope counts as a spike, for one log.
+
+    Centre and scale come from the median and the MAD (scaled by 1.4826 to match a
+    Gaussian sigma) rather than mean/std, because the spikes we want to detect are
+    themselves outliers -- with mean/std a few strong plumes would inflate the
+    threshold and hide themselves. Returns nan if the log has no usable spread.
+    """
+    s = np.asarray(slope, dtype=float)
+    s = s[np.isfinite(s)]
+    if len(s) < 10:
+        return float("nan")
+    med = float(np.median(s))
+    mad = float(np.median(np.abs(s - med)))
+    if mad <= 0:
+        return float("nan")
+    return med + DERIV_SPIKE_K * 1.4826 * mad
 
 
 def render_env(df, name, out_path, cols, signal_label):
@@ -585,6 +695,7 @@ def load_pool(names):
             continue
         df = df.copy()
         df["_seg"] = seg
+        df["_log"] = name          # kept for per-log labelling (--deriv panels)
         parts.append(df)
         print(f"  + {name}: {len(df)} reading(s)")
 
@@ -837,6 +948,133 @@ def map_diff(names, map_dir, zoom=False):
     print(f"Done: differential over {n} log(s), {len(pooled)} reading(s).")
 
 
+def add_derivative(df):
+    """Add _slope (mV/s) and _spike (bool) columns, computed per log.
+
+    Per log, because the derivative only means anything along one continuous run of
+    samples -- concatenating two surveys would put a meaningless slope across the
+    join -- and because each survey gets its own spike threshold from its own noise.
+    Returns the frame ordered by (log, time) with the two columns added; rows whose
+    slope came out NaN (window edges, windows over a time gap) are dropped, since a
+    reading with no derivative has nothing to contribute to a derivative map.
+    """
+    g = df.sort_values(["_seg", "millis_since_boot"]).copy()
+    slope = np.full(len(g), np.nan)
+    spike = np.zeros(len(g), dtype=bool)
+    sig = signal_total(g, DERIV_COLS)
+    t_all = pd.to_numeric(g["millis_since_boot"], errors="coerce").to_numpy() / 1000.0
+    seg_all = g["_seg"].to_numpy()
+
+    for sv in np.unique(seg_all):
+        sel = seg_all == sv
+        s = rate_of_change(t_all[sel], sig[sel])
+        slope[sel] = s
+        thr = spike_threshold(s)
+        if np.isfinite(thr):
+            spike[sel] = np.isfinite(s) & (s >= thr)
+        label = g.loc[sel, "_log"].iloc[0] if "_log" in g.columns else f"log {sv}"
+        n_sp = int(spike[sel].sum())
+        thr_txt = "n/a" if not np.isfinite(thr) else f"{thr:+.2f} mV/s"
+        print(f"  {label}: spike threshold {thr_txt}, {n_sp} spike sample(s) "
+              f"of {int(np.isfinite(s).sum())} with a slope")
+
+    g["_slope"] = slope
+    g["_spike"] = spike
+    return g[np.isfinite(g["_slope"])]
+
+
+def render_deriv(df, name, out_path):
+    """Render the rate-of-change map: each ground cell's steepest rise, in mV/s.
+
+    A plume encounter shows as a bright cell rather than as a hue you first have to
+    compare against a drifting baseline. Per-log spike thresholds and counts are
+    still printed to the console (see add_derivative) as a sanity check on how much
+    of the map is genuinely above each survey's own noise. Returns True on success.
+    """
+    g = add_derivative(df)
+    if len(g) < 2:
+        print("  skip deriv: not enough samples with a usable slope")
+        return False
+
+    x, y = lonlat_to_mercator(g["lon"].to_numpy(), g["lat"].to_numpy())
+    slope = g["_slope"].to_numpy()
+
+    # Square, padded view + ground grid (same framing as render()).
+    cx, cy = (x.min() + x.max()) / 2.0, (y.min() + y.max()) / 2.0
+    half = max(x.max() - cx, y.max() - cy, MIN_SPAN_M) * (1.0 + MARGIN_FRAC)
+    n_half = int(math.ceil(half / BIN_SIZE_M))
+    x_edges = cx + np.arange(-n_half, n_half + 1) * BIN_SIZE_M
+    y_edges = cy + np.arange(-n_half, n_half + 1) * BIN_SIZE_M
+
+    # Per-cell peak rise. groupby-max rather than histogram2d (which can only sum),
+    # because the mean of a pass through a plume cancels rise against fall.
+    ix = np.floor((x - x_edges[0]) / BIN_SIZE_M).astype(int)
+    iy = np.floor((y - y_edges[0]) / BIN_SIZE_M).astype(int)
+    cells = (pd.DataFrame({"ix": ix, "iy": iy, "slope": slope})
+             .groupby(["ix", "iy"])["slope"].max().reset_index())
+
+    nx, ny = len(x_edges) - 1, len(y_edges) - 1
+    grid = np.full((nx, ny), np.nan)
+    for _, r in cells.iterrows():
+        if 0 <= int(r.ix) < nx and 0 <= int(r.iy) < ny:
+            grid[int(r.ix), int(r.iy)] = r.slope
+    grid = np.ma.masked_invalid(grid)
+    vmax = float(np.percentile(cells["slope"], DERIV_VMAX_PCT))
+    if not np.isfinite(vmax) or vmax <= 0:
+        vmax = float(np.nanmax(cells["slope"])) or 1.0
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.set_xlim(cx - half, cx + half)
+    ax.set_ylim(cy - half, cy + half)
+    ax.set_aspect("equal")
+    for s in np.unique(g["_seg"].to_numpy()):  # per-log route, so no jump between
+        m = g["_seg"].to_numpy() == s          # the end of one survey and the next
+        ax.plot(x[m], y[m], color="white", lw=0.8, alpha=0.6, zorder=2)
+    mesh = ax.pcolormesh(x_edges, y_edges, grid.T, cmap=DERIV_CMAP,
+                         norm=matplotlib.colors.PowerNorm(
+                             gamma=DERIV_GAMMA, vmin=0.0, vmax=vmax),
+                         alpha=HEATMAP_ALPHA, zorder=3, shading="flat")
+    zoom = min(ctx.tile._calculate_zoom(*lonlat_bounds(ax)), MAX_ZOOM)
+    try:
+        ctx.add_basemap(ax, source=BASEMAP, crs="EPSG:3857", zoom=zoom,
+                        attribution_size=6)
+    except Exception as e:  # noqa: BLE001 - still emit the map if tiles fail
+        print(f"  ({name}: no basemap -- {e})")
+    ax.set_xticks([]); ax.set_yticks([])
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+
+    cb = fig.colorbar(mesh, ax=ax, fraction=0.046, pad=0.02)
+    cb.set_label(f"steepest rise in {DERIV_LABEL} (mV/s)", color=INK)
+    cb.outline.set_visible(False)
+
+    fig.suptitle(f"{name} {DERIV_LABEL} rate of change", fontsize=18,
+                 fontweight="bold", color=INK, x=0.12, ha="left", y=0.92)
+    ax.set_title(f"peak d/dt per {BIN_SIZE_M:g} m cell (gamma {DERIV_GAMMA:g} "
+                 f"scale, capped at the {DERIV_VMAX_PCT}th percentile = "
+                 f"{vmax:.2f} mV/s)", fontsize=9, color=MUTED, loc="left")
+
+    fig.savefig(out_path, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  wrote {out_path}")
+    return True
+
+
+def map_deriv(names, map_dir):
+    """--deriv mode: pool the chosen logs and render one rate-of-change map.
+
+    Unlike --combine there is no _env cross-check written: differentiating already
+    rejects the slow temperature/humidity wander that cross-check exists to catch,
+    so the answer would be a flat 'no correlation' every time.
+    """
+    print("Rate-of-change map:")
+    pooled, n = load_pool(names)
+    label = (f"combined ({n} logs)" if n > 1
+             else os.path.basename(resolve_csvs(names)[0]))
+    render_deriv(pooled, label, os.path.join(map_dir, "derivative.png"))
+    print(f"Done: derivative over {n} log(s), {len(pooled)} reading(s).")
+
+
 def main():
     map_dir = os.path.join(_HERE, "maps")
     os.makedirs(map_dir, exist_ok=True)
@@ -855,6 +1093,11 @@ def main():
         zoom = "--zoom" in rest
         names = [a for a in rest if a != "--zoom"]
         map_diff(names, map_dir, zoom=zoom)
+    elif args and args[0] == "--deriv":
+        # --deriv [name ...]: pool the named logs (or all) and render one
+        # derivative.png -- d(signal)/dt, which flattens the slow baseline wander
+        # and leaves the sharp plume arrivals standing out as spikes.
+        map_deriv(args[1:], map_dir)
     else:
         # No arguments: render every *.csv in tools/data/ to tools/maps/. Each log
         # yields <name>.png (the gas map) and <name>_env.png (the env cross-check).

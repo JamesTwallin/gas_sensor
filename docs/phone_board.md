@@ -53,6 +53,10 @@ VSYS ──► AP2112K-3.3 LDO (EN = PWR_EN) ──► +3V3    (ESP32-S3, ADS111
 - Heaters are firmware-controlled: GPIO7 must drive HTR_EN high after boot (and
   low for the low-battery cutoff). Until then the 100k pull-down keeps them off,
   so there is no heater inrush during boot and a firmware crash fails safe.
+  The firmware drives it high as the first thing in `setup()`, with the CPU at
+  80 MHz and before the radio starts: on USB power with no cell fitted, the
+  USB500 input limit is marginal for the boost start-up into cold heaters, and
+  enabling them later alongside BLE browned the ESP32 out (bench, 2026-09-28).
 - USB flashing needs SW1 ON (+3V3 is gated by it).
 - There is no deep-discharge cutoff on the board: **use a cell with a built-in
   protection circuit (PCM)**, and have the firmware sleep on low battery.

@@ -64,7 +64,7 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
   if (connected && f && !f.adsOk)
     banners.push(['warning', 'ADS1115 not responding: using ESP32 fallback ADC (lower resolution).']);
   if (connected && f && !f.bmeOk)
-    banners.push(['warning', 'BME280 not responding: no temperature / humidity / pressure.']);
+    banners.push(['warning', 'SHT40 not responding: no temperature / humidity.']);
   if (state.recError) banners.push(['critical', `Recording write error: ${state.recError}`]);
   if (state.recording && state.gpsStatus !== 'ok')
     banners.push([

@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "phone_board")(type "KiCad")(uri "${KIPRJMOD}/lib/phone_board.kicad_sym")(options "")(descr "rev B custom symbols"))
+)
