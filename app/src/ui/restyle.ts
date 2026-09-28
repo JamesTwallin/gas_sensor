@@ -1,13 +1,12 @@
-// Layout system: Shopify Restyle over the colour palette in theme.ts.
+// Layout system: Shopify Restyle over the palette in theme.ts.
 //
 // Every margin, padding and gap in the UI is one of the `spacing` steps below,
 // referenced by name (`padding="m"`), so components cannot drift apart by a few
-// pixels. Text styles are named variants for the same reason. The palette is
-// unchanged; theme.ts stays the source of colours (the SVG charts paint from it
-// directly).
+// pixels. Text styles are named variants (one type scale, one family: Inter).
+// theme.ts stays the source of colours; the SVG charts paint from it directly.
 
 import { createBox, createText, createTheme, ThemeProvider, useTheme as useRestyleTheme } from '@shopify/restyle';
-import { DARK, LIGHT, type Theme as Palette } from './theme';
+import { DARK, FONT, LIGHT, type Theme as Palette } from './theme';
 
 /** The spacing scale (px). `s` separates siblings, `m` pads cards, `l` pads screens. */
 export const spacing = {
@@ -26,6 +25,7 @@ export const borderRadii = {
   s: 8,
   m: 12,
   l: 16,
+  xl: 20,
   pill: 999,
 } as const;
 
@@ -43,28 +43,32 @@ function makeTheme(p: Palette) {
     borderRadii,
     breakpoints: { phone: 0, tablet: 720 },
     textVariants: {
-      defaults: { color: 'text', fontSize: 17 },
-      h2: { color: 'text', fontSize: 26, fontWeight: '700' },
-      h3: { color: 'text', fontSize: 20, fontWeight: '700' },
-      body: { color: 'text', fontSize: 17 },
-      hint: { color: 'textMuted', fontSize: 15, lineHeight: 20 },
-      label: { color: 'text', fontSize: 17, fontWeight: '600' },
-      labelHint: { color: 'textMuted', fontSize: 14, lineHeight: 18 },
-      pill: { color: 'text', fontSize: 15, fontWeight: '600' },
-      button: { color: 'text', fontSize: 17, fontWeight: '700' },
-      buttonBig: { color: 'text', fontSize: 18, fontWeight: '700' },
-      bannerCritical: { color: 'onDark', fontSize: 17, fontWeight: '700' },
-      bannerWarning: { color: 'text', fontSize: 17, fontWeight: '700' },
-      bannerInfo: { color: 'textMuted', fontSize: 15, fontWeight: '600' },
-      stateWord: { color: 'text', fontWeight: '900', letterSpacing: -1 },
-      stateSub: { color: 'text', fontSize: 24, fontWeight: '700', fontVariant: ['tabular-nums'] },
-      stateLine: { color: 'text', fontSize: 18, fontWeight: '600' },
-      cellKey: { color: 'textMuted', fontSize: 13, fontWeight: '600' },
-      cellValue: { color: 'text', fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] },
-      legend: { color: 'textMuted', fontSize: 14, fontWeight: '600' },
-      rowTitle: { color: 'text', fontSize: 17, fontWeight: '700' },
-      rowMeta: { color: 'textMuted', fontSize: 14 },
-      toast: { color: 'bg', fontSize: 17, fontWeight: '700' },
+      defaults: { color: 'text', fontSize: 16, fontFamily: FONT.regular },
+      h2: { color: 'text', fontSize: 24, fontFamily: FONT.bold, letterSpacing: -0.3 },
+      h3: { color: 'text', fontSize: 18, fontFamily: FONT.semibold },
+      body: { color: 'text', fontSize: 16, fontFamily: FONT.regular },
+      hint: { color: 'textMuted', fontSize: 14, lineHeight: 20, fontFamily: FONT.regular },
+      eyebrow: { color: 'textMuted', fontSize: 11, letterSpacing: 1.2, fontFamily: FONT.semibold, textTransform: 'uppercase' },
+      label: { color: 'text', fontSize: 16, fontFamily: FONT.semibold },
+      labelHint: { color: 'textMuted', fontSize: 13, lineHeight: 18, fontFamily: FONT.regular },
+      chip: { color: 'textMuted', fontSize: 14, fontFamily: FONT.semibold },
+      link: { color: 'text', fontSize: 15, fontFamily: FONT.semibold },
+      button: { color: 'text', fontSize: 16, fontFamily: FONT.semibold },
+      buttonBig: { color: 'text', fontSize: 17, fontFamily: FONT.bold },
+      strip: { color: 'textMuted', fontSize: 14, fontFamily: FONT.medium },
+      stripStrong: { color: 'text', fontSize: 14, fontFamily: FONT.semibold },
+      stateWord: { color: 'text', fontFamily: FONT.extrabold, letterSpacing: -1.5 },
+      stateSub: { color: 'text', fontSize: 22, fontFamily: FONT.semibold },
+      stateLine: { color: 'text', fontSize: 16, fontFamily: FONT.medium },
+      cardTitle: { color: 'text', fontSize: 14, fontFamily: FONT.semibold },
+      cardValue: { color: 'text', fontSize: 18, fontFamily: FONT.semibold, fontVariant: ['tabular-nums'] },
+      tileKey: { color: 'textMuted', fontSize: 12, fontFamily: FONT.medium },
+      tileValue: { color: 'text', fontSize: 20, fontFamily: FONT.semibold },
+      tileUnit: { color: 'textMuted', fontSize: 13, fontFamily: FONT.medium },
+      legend: { color: 'textMuted', fontSize: 13, fontFamily: FONT.medium },
+      rowTitle: { color: 'text', fontSize: 16, fontFamily: FONT.semibold },
+      rowMeta: { color: 'textMuted', fontSize: 13, fontFamily: FONT.regular },
+      toast: { color: 'bg', fontSize: 15, fontFamily: FONT.semibold },
     },
   });
 }

@@ -1,16 +1,24 @@
-// Chart geometry, ported from the web app's canvas renderer (src/ui/charts.ts).
-// The drawing itself is react-native-svg (ui/charts.tsx); everything that decides
-// *where* a line goes lives here, pure and DOM-free, so it is unit-tested.
+// Chart geometry. The drawing itself is react-native-svg (ui/charts.tsx);
+// everything that decides *where* a line goes lives here, pure and DOM-free, so
+// it is unit-tested.
 //
-//  - live:     CH4 VRL as a filled area, LPG as a line, CH4 baseline dotted; 0 V
-//              floor, dynamic top (max + 10 %, never under 1 V); dashed 1 V grid.
-//  - overview: last 10 min of CH4, peak-per-column, fixed 0..VC scale, baseline
-//              dotted, same 1 V grid.
+// Both charts scale to the data rather than to 0..VC: clean-air VRL sits around
+// 3 V and a plume adds a few hundred mV, so a fixed scale hid the signal in the
+// top tenth of the plot. The y-range is the window's min..max, widened to at
+// least `rangeFloorMv` (the classifier's own range floor, so the chart and the
+// HIGH/MED/LOW thirds agree on what "a change" is) plus headroom, and it never
+// goes below 0.
+//
+//  - live:     CH4 VRL as a washed area + line, LPG as a line, CH4 baseline
+//              dotted; last 60 s.
+//  - overview: last 10 min of CH4, peak-per-column, current baseline ruled.
 
-import { dynamicYMax, peakPerColumn, type ChartPoint } from '../core/chartData';
+import { peakPerColumn, type ChartPoint } from '../core/chartData';
 
-export const GRID_STEP_MV = 1000;
-export const LIVE_FLOOR_MV = 1000;
+/** Smallest y-span the chart will show (mV): stops noise filling the plot. */
+export const DEFAULT_RANGE_FLOOR_MV = 150;
+/** Headroom above and below the data range, as a fraction of the span. */
+export const RANGE_PAD = 0.15;
 /** A gap longer than this between samples breaks the trace. */
 export const GAP_MS = 5000;
 
@@ -22,7 +30,7 @@ export interface ChartLayout {
   padB: number;
 }
 
-export const DEFAULT_LAYOUT = { padL: 30, padT: 6, padB: 20 };
+export const DEFAULT_LAYOUT = { padL: 56, padT: 8, padB: 18 };
 
 export interface GridLine {
   y: number;
@@ -30,27 +38,67 @@ export interface GridLine {
 }
 
 export interface ChartFrame {
+  yMin: number;
   yMax: number;
   gridLines: GridLine[];
-  /** y of the 0 mV axis. */
+  /** y of the bottom of the plot (the area fills down to it). */
   axisY: number;
   leftLabel: string;
   rightLabel: string;
 }
 
-/** Map mV -> y, clamped into the plot area. */
-function makeY(l: ChartLayout, yMax: number): (mv: number) => number {
-  const plotH = l.height - l.padB - l.padT;
-  return (mv: number) => l.padT + plotH - (Math.max(0, Math.min(yMax, mv)) / yMax) * plotH;
+export interface XY {
+  x: number;
+  y: number;
 }
 
-function frame(l: ChartLayout, yMax: number, leftLabel: string, rightLabel: string): ChartFrame {
-  const y = makeY(l, yMax);
-  const gridLines: GridLine[] = [];
-  for (let level = GRID_STEP_MV; level < yMax; level += GRID_STEP_MV) {
-    gridLines.push({ y: Math.round(y(level)) + 0.5, label: `${level / 1000}V` });
+/** min..max of the values, widened to the floor and padded; clamped at 0. */
+export function dataRange(values: Iterable<number>, rangeFloorMv: number): { yMin: number; yMax: number } {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const v of values) {
+    if (!Number.isFinite(v)) continue;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
   }
-  return { yMax, gridLines, axisY: y(0) + 0.5, leftLabel, rightLabel };
+  if (lo === Infinity) return { yMin: 0, yMax: Math.max(1, rangeFloorMv) };
+  const mid = (lo + hi) / 2;
+  const half = (Math.max(hi - lo, rangeFloorMv) / 2) * (1 + 2 * RANGE_PAD);
+  const yMin = Math.max(0, mid - half);
+  return { yMin, yMax: Math.max(yMin + 1, mid + half) };
+}
+
+/** Map mV -> y, clamped into the plot area. */
+function makeY(l: ChartLayout, yMin: number, yMax: number): (mv: number) => number {
+  const plotH = l.height - l.padB - l.padT;
+  const span = yMax - yMin;
+  return (mv: number) => l.padT + plotH - ((Math.max(yMin, Math.min(yMax, mv)) - yMin) / span) * plotH;
+}
+
+const STEPS = [10, 20, 50, 100, 200, 250, 500, 1000, 2000, 5000];
+
+/** A tick step giving at most four gridlines across the span. */
+export function gridStep(spanMv: number): number {
+  for (const s of STEPS) if (spanMv / s <= 4) return s;
+  return STEPS[STEPS.length - 1];
+}
+
+export function gridLabel(mv: number): string {
+  if (mv >= 1000) return `${(mv / 1000).toFixed(2).replace(/\.?0+$/, '')} V`;
+  return `${Math.round(mv)} mV`;
+}
+
+function frame(l: ChartLayout, yMin: number, yMax: number, leftLabel: string, rightLabel: string): ChartFrame {
+  const y = makeY(l, yMin, yMax);
+  const step = gridStep(yMax - yMin);
+  const gridLines: GridLine[] = [];
+  const first = Math.ceil(yMin / step) * step;
+  for (let level = first; level <= yMax; level += step) {
+    // Keep labels clear of the top and bottom edges.
+    if (level - yMin < step * 0.25 || yMax - level < step * 0.25) continue;
+    gridLines.push({ y: Math.round(y(level)) + 0.5, label: gridLabel(level) });
+  }
+  return { yMin, yMax, gridLines, axisY: y(yMin) + 0.5, leftLabel, rightLabel };
 }
 
 /** Split into runs with no gap longer than GAP_MS. */
@@ -70,12 +118,12 @@ export function runs<T extends { t: number }>(pts: readonly T[]): T[][] {
 
 const n = (v: number) => (Math.round(v * 100) / 100).toString();
 
-function polyline(pts: readonly { x: number; y: number }[]): string {
+function polyline(pts: readonly XY[]): string {
   return pts.map((p, i) => `${i ? 'L' : 'M'}${n(p.x)} ${n(p.y)}`).join(' ');
 }
 
 /** A polyline closed down to the axis, for the filled area under a trace. */
-function area(pts: readonly { x: number; y: number }[], axisY: number): string {
+function area(pts: readonly XY[], axisY: number): string {
   if (pts.length < 2) return '';
   return `M${n(pts[0].x)} ${n(axisY)} ${polyline(pts).slice(1)} L${n(pts[pts.length - 1].x)} ${n(axisY)} Z`;
 }
@@ -87,6 +135,9 @@ export interface LiveChart extends ChartFrame {
   lpgLines: string[];
   /** Dotted baseline, broken wherever there is no trusted baseline or a link gap. */
   baselineLines: string[];
+  /** Newest point of each trace, for the end marker; null without data. */
+  ch4End: XY | null;
+  lpgEnd: XY | null;
 }
 
 export function buildLiveChart(
@@ -94,24 +145,28 @@ export function buildLiveChart(
   now: number,
   spanMs: number,
   l: ChartLayout,
+  rangeFloorMv = DEFAULT_RANGE_FLOOR_MV,
 ): LiveChart {
-  const yMax = dynamicYMax(
+  const { yMin, yMax } = dataRange(
     (function* () {
       for (const p of pts) {
         yield p.ch4;
         yield p.lpg;
+        if (p.baseline !== null) yield p.baseline;
       }
     })(),
-    LIVE_FLOOR_MV,
+    rangeFloorMv,
   );
-  const f = frame(l, yMax, `−${Math.round(spanMs / 1000)} s`, 'now');
-  const y = makeY(l, yMax);
+  const f = frame(l, yMin, yMax, `−${Math.round(spanMs / 1000)} s`, 'now');
+  const y = makeY(l, yMin, yMax);
   const plotW = l.width - l.padL;
   const x = (t: number) => l.padL + ((t - (now - spanMs)) / spanMs) * plotW;
 
   const ch4Areas: string[] = [];
   const ch4Lines: string[] = [];
   const lpgLines: string[] = [];
+  let ch4End: XY | null = null;
+  let lpgEnd: XY | null = null;
   for (const run of runs(pts)) {
     if (run.length < 2) continue;
     const ch4 = run.map((p) => ({ x: x(p.t), y: y(p.ch4) }));
@@ -119,11 +174,13 @@ export function buildLiveChart(
     ch4Areas.push(area(ch4, f.axisY));
     ch4Lines.push(polyline(ch4));
     lpgLines.push(polyline(lpg));
+    ch4End = ch4[ch4.length - 1];
+    lpgEnd = lpg[lpg.length - 1];
   }
 
   // The baseline breaks on a link gap and wherever there is no trusted baseline.
   const baselineLines: string[] = [];
-  let seg: { x: number; y: number }[] = [];
+  let seg: XY[] = [];
   let prevT = -Infinity;
   for (const p of pts) {
     if (p.baseline === null || p.t - prevT > GAP_MS) {
@@ -136,7 +193,7 @@ export function buildLiveChart(
   }
   if (seg.length > 1) baselineLines.push(polyline(seg));
 
-  return { ...f, ch4Areas, ch4Lines, lpgLines, baselineLines };
+  return { ...f, ch4Areas, ch4Lines, lpgLines, baselineLines, ch4End, lpgEnd };
 }
 
 export interface OverviewChart extends ChartFrame {
@@ -150,17 +207,25 @@ export function buildOverviewChart(
   pts: readonly ChartPoint[],
   now: number,
   spanMs: number,
-  fullScaleMv: number,
   l: ChartLayout,
+  rangeFloorMv = DEFAULT_RANGE_FLOOR_MV,
 ): OverviewChart {
-  const yMax = Math.max(GRID_STEP_MV, fullScaleMv);
-  const f = frame(l, yMax, `−${Math.round(spanMs / 60000)} min`, 'now');
-  const y = makeY(l, yMax);
   const plotW = l.width - l.padL;
   const cols = Math.max(1, Math.floor(plotW / 2)); // one column per 2 px
   const t0 = now - spanMs;
-  const colX = (col: number) => l.padL + ((col + 0.5) / cols) * plotW;
   const peaks = peakPerColumn(pts, t0, now, cols, (p) => p.ch4);
+  const last = pts.length ? pts[pts.length - 1] : null;
+
+  const { yMin, yMax } = dataRange(
+    (function* () {
+      for (const p of pts) if (p.t >= t0) yield p.ch4;
+      if (last && last.baseline !== null) yield last.baseline;
+    })(),
+    rangeFloorMv,
+  );
+  const f = frame(l, yMin, yMax, `−${Math.round(spanMs / 60000)} min`, 'now');
+  const y = makeY(l, yMin, yMax);
+  const colX = (col: number) => l.padL + ((col + 0.5) / cols) * plotW;
 
   // Columns without samples break the line (so a link drop reads as a gap).
   const maxColGap = Math.ceil((GAP_MS / spanMs) * cols) + 1;
@@ -180,7 +245,6 @@ export function buildOverviewChart(
     ch4Lines.push(polyline(xy));
   }
 
-  const last = pts.length ? pts[pts.length - 1] : null;
   const baselineRule =
     last && last.baseline !== null
       ? { x1: peaks.length ? colX(peaks[0].col) : l.padL, x2: l.width, y: y(last.baseline) }
