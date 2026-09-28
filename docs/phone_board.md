@@ -1,5 +1,8 @@
 # Phone-companion board (rev B) — design spec
 
+> Rev C (`hardware/phone_board`) is rev B compacted to 60 × 33 mm with the same
+> schematic, parts and pin map; everything electrical below applies unchanged.
+
 Rev B moves everything a phone already does onto the phone. The board keeps only
 what a phone cannot do: the gas sensors, the environment sensor, and a radio.
 

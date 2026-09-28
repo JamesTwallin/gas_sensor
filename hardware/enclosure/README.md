@@ -1,14 +1,25 @@
-# Handheld enclosure (rev B board)
+# Handheld enclosure (rev C board)
 
-80 × 50 × 19.5 mm two-part case for the [phone-companion board](../phone_board/).
+74 × 47 × 19.5 mm two-part case for the [phone-companion board](../phone_board/).
 The Figaro sensor cans poke through the lid so they sit in open air, and the case
 is a chimney: air in through the wall louvres and floor vents, up past the hot
 sensors, out through the lid grille.
 
 ![assembly](build/assembly.png)
 
-**Status: designed, not yet printed or fitted.** Dimensions come from the KiCad
-board, but nothing has been checked against a real board or a real cell.
+**Status: parameters updated for the rev C board (60 × 33 mm), not yet
+re-rendered, printed or fitted.** `case.scad` carries rev C's outline, sensor,
+USB-C, switch, button, LED, SHT40 and mounting-hole positions, and the battery
+plug opening has moved from the bottom wall to the right wall, where rev C's
+JST-PH now points. The STLs and `build/assembly.png` still show the rev B case:
+regenerate them (below) before printing.
+
+**Open problem before printing: the board hold-down.** The rev B case screwed
+the board to a floor boss at its H1 hole, in a corner the cell did not reach.
+A 60 × 33 mm board is smaller than a 60 × 35 mm cell, so every point of the
+board is now over the cell and the boss at `mount` lands on top of it. Either
+fit a shorter cell (a 1000 mAh 50 × 34 mm cell leaves the H1 end clear) or
+replace the boss with a hold-down from the lid before trusting the model.
 
 ## Files
 
@@ -59,15 +70,16 @@ inserts, open the pilots to 3.2 mm and set M2 × 3 mm inserts.
    the lead up the right-hand end. The ribs hold it off the floor vents.
 2. Lower the board onto the end shelves, sensors at the right-hand end.
 3. Fit the M2 × 5 screw through the board's H1 hole into the boss.
-4. Plug the battery into J2 through the bottom-edge opening. **Check the polarity
-   first** (board README).
+4. Plug the battery into J2 through the right-hand wall opening, under the
+   sensors. **Check the polarity first** (board README).
 5. Line the sensor cans up with the lid collars and lower the lid. The lip locates
    it; the cans should pass through without touching.
 6. Four M2 × 8 screws, gently — they cut their own threads.
 
 ## Openings
 
-- **Bottom edge:** USB-C, and a wide opening at the battery connector.
+- **Bottom edge:** USB-C.
+- **Right end:** a wide opening at the battery connector, below the sensor louvres.
 - **Top edge:** the power slide switch, lever reachable from the side.
 - **Lid:** sensor collars, hex grille over the sensor end and over the SHT40,
   RST and BOOT holes (press with a pen or paperclip), LED window.
