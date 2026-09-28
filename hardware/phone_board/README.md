@@ -1,18 +1,28 @@
-# Phone-companion board (rev B)
+# Phone-companion board (rev C)
 
-A 66 × 36 mm, 4-layer board: bare ESP32-S3-MINI-1, two bare Figaro TGS sensors,
+A 60 × 33 mm, 4-layer board: bare ESP32-S3-MINI-1, two bare Figaro TGS sensors,
 ADS1115, SHT40 temp/humidity, LiPo charging and a 5 V heater boost. Position, display,
 storage and signal processing live on the phone. The electrical spec (why each
 part, pin map, BLE protocol) is [docs/phone_board.md](../../docs/phone_board.md).
 
 ![top](preview/render_top.png)
 
-**Status: fabricated and assembled (JLCPCB), bring-up passed 2026-09-28.**
-The board enumerates over native USB, flashes, and `firmware/phone_board`
-reports the ADS1115, the SHT40, a 5.02 V heater rail and both Figaro sensors
-on USB power. BLE and battery operation are not yet exercised. The KiCad
-checks report 0 DRC violations, 0 unconnected items and 0 schematic/PCB
-mismatches. ERC is clean.
+**Status: rev C is rev B compacted, not yet fabricated.** Rev B (66 × 36 mm) was
+fabricated and assembled at JLCPCB and passed bring-up on 2026-09-28: it
+enumerates over native USB, flashes, and `firmware/phone_board` reports the
+ADS1115, the SHT40, a 5.02 V heater rail and both Figaro sensors on USB power.
+BLE and battery operation are not yet exercised.
+
+Rev C keeps rev B's schematic, parts and block layout and only removes empty
+board area: the MCU column (module, decoupling, SHT40 tongue and its
+hand-routed neck) moved 2 mm up as one unit, the power/USB column (switch, LDO,
+hand-routed boost loop, charger, USB-C) moved 2 mm left as one unit, and the
+free-form right third was re-packed: the two cans sit flush at the right edge
+with the battery connector under them (cable leaves through the right edge),
+the ADC and sensor networks form one column, RESET sits above BOOT, and the
+serial test pads are a labelled 2 × 2 grid. Area is down 17 %. The KiCad checks
+report 0 DRC violations, 0 unconnected items and 0 schematic/PCB mismatches;
+ERC is clean.
 
 **USB-only power is marginal at heater turn-on.** With no cell on J2, the
 BQ24073's 500 mA USB input limit only just covers the boost converter starting
@@ -111,7 +121,32 @@ don't regenerate over those edits.
 - **3D models:** the renders show no models for the ESP32 module, USB-C, the
   switches or the sensors, because KiCad doesn't ship them. This is cosmetic.
 
-## Known limitations of rev B
+## Cutting the cost
+
+Rev C's smaller outline barely moves the JLCPCB price at 5 pieces (the 4-layer
+bare-board price is close to flat below 100 × 100 mm). The levers that do
+matter, biggest first:
+
+- **Extended-part loading fees.** JLC charges a loading fee per Extended part
+  type on top of the part price. The ESP32 module, BQ24073, TPS61023, ADS1115,
+  SHT40, WS2812B-2020, the MSK12C02 slide switch and the JST-PH are all
+  Extended; check the rest against the JLC library and swap any Extended
+  resistor/capacitor value for a Basic neighbour (the 732 kΩ feedback resistor
+  is the likely one; a 750 kΩ Basic part shifts the heater rail by ~2 %).
+- **Two layers instead of four.** The bare board then costs roughly a third
+  as much at low quantity. Electrically feasible (USB full-speed, I2C and a 1 MHz boost
+  are the fastest things here) but it is a full re-route with the bottom
+  side as ground, not a tweak of this layout.
+- **Cheaper silicon.** ADS1015 is pin- and register-compatible with ADS1115 at
+  12 bits instead of 16 and about half the price; the firmware's gain and
+  scaling would need checking. SHT30 is cheaper than SHT40 but has a different
+  footprint and driver.
+- **Skip via-in-pad filling.** Plain vias under the ESP32 and charger are fine
+  for prototypes and avoid the filled-and-capped surcharge.
+- **Quantity.** The setup, stencil and loading fees are per order, so 10 boards
+  cost little more than 5.
+
+## Known limitations of rev B and rev C
 
 - **Charger:** BQ24073 (no SYSOFF pin). In the off position < 10 µA still flow
   from the battery.
