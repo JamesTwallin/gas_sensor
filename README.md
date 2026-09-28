@@ -23,6 +23,18 @@ serial). The BOOT button re-zeros the baseline. NVS storage and a dedicated mark
 button are not done yet. The full design notes are in the header comment of
 [src/main.cpp](src/main.cpp).
 
+**Board revisions** (this README and the pin map below describe rev A):
+
+| Rev | Where | What | State |
+|---|---|---|---|
+| A | [hardware/carrier_board](hardware/carrier_board/) | ESP32-S3-Zero + sensor modules on a carrier, OLED, GNSS, microSD | prototype in use |
+| B | commit `c1cf8df` | bare ESP32-S3-MINI-1, bare Figaro sensors, BLE to the phone app, 66 × 36 mm | built, bring-up passed 2026-09-28 |
+| C | [hardware/phone_board](hardware/phone_board/) | rev B compacted to 60 × 33 mm, same circuit | generated, not ordered |
+| D | [hardware/phone_board_mems](hardware/phone_board_mems/) | rev C with Winsen GM-402B MEMS sensors and a 2.8 V LDO, 55 × 31 mm | draft |
+
+Rev B–D electrical spec and BLE protocol: [docs/phone_board.md](docs/phone_board.md).
+Firmware for them: [firmware/phone_board](firmware/phone_board/); phone app: [app](app/).
+
 **Known limitation:** the DFRobot GNSS library (I2C mode) gives satellite count,
 position, altitude and UTC, but **not** HDOP or fix type, so the firmware derives
 a coarse FIX / NO-FIX from satellite count and plausible coordinates. Real fix
@@ -140,11 +152,14 @@ Tweakables (FPS, window, basemap, filters) are constants near the top of each sc
 ## Repository layout
 
 ```
-platformio.ini   build configuration, board, flags, pinned libraries
-src/main.cpp     the firmware
-docs/            sensor notes (sensors.md) + carrier-board connection spec (schematic.md)
-hardware/        KiCad 9 carrier-board project
-tools/           Python analysis (maps + videos); local CSVs in tools/data/
+platformio.ini   rev A build configuration, board, flags, pinned libraries
+src/main.cpp     rev A firmware
+firmware/        rev B–D firmware (phone_board/)
+app/             Expo phone app for rev B–D (BLE, GPS, CSV logging)
+docs/            sensors.md, carrier-board spec (schematic.md), phone-board spec (phone_board.md)
+hardware/        KiCad 9 projects: carrier_board (rev A), phone_board (rev C),
+                 phone_board_mems (rev D), enclosure (OpenSCAD case for the phone board)
+tools/           Python analysis (maps + videos), serial bridge; local CSVs in tools/data/
 ```
 
 ## Hardware design
