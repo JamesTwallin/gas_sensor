@@ -6,7 +6,7 @@ export const BRIDGE_PORT = 8765;
 
 /**
  * Host of the Metro / Expo dev server this JS bundle was loaded from, taken
- * from the bundle URL (e.g. "http://192.168.0.105:8081/index.bundle?..."),
+ * from the bundle URL (e.g. "http://192.168.1.20:8081/index.bundle?..."),
  * or null for a release bundle / unknown URL.
  */
 export function hostFromScriptUrl(scriptURL: string | null | undefined): string | null {

@@ -4,8 +4,8 @@ import { DEFAULT_SETTINGS, sanitizeSettings } from '../src/core/settings';
 
 describe('hostFromScriptUrl', () => {
   it('takes the host out of a Metro bundle URL', () => {
-    expect(hostFromScriptUrl('http://192.168.0.105:8081/index.bundle?platform=android&dev=true')).toBe(
-      '192.168.0.105',
+    expect(hostFromScriptUrl('http://192.168.1.20:8081/index.bundle?platform=android&dev=true')).toBe(
+      '192.168.1.20',
     );
     expect(hostFromScriptUrl('http://my-pc.local:8081/index.bundle')).toBe('my-pc.local');
     expect(hostFromScriptUrl('exp://10.0.0.7:8081/--/x')).toBe('10.0.0.7');
@@ -28,15 +28,15 @@ describe('bridgeUrl', () => {
   });
 
   it('falls back to the Metro host', () => {
-    expect(bridgeUrl('', 'http://192.168.0.105:8081/index.bundle')).toBe(`ws://192.168.0.105:${BRIDGE_PORT}/ws`);
+    expect(bridgeUrl('', 'http://192.168.1.20:8081/index.bundle')).toBe(`ws://192.168.1.20:${BRIDGE_PORT}/ws`);
     expect(bridgeUrl('', null)).toBeNull();
   });
 });
 
 describe('bridgeLabel', () => {
   it('shows just the host', () => {
-    expect(bridgeLabel(`ws://192.168.0.105:${BRIDGE_PORT}/ws`)).toBe('192.168.0.105');
-    expect(bridgeLabel('ws://192.168.0.105:9000/ws')).toBe('192.168.0.105:9000');
+    expect(bridgeLabel(`ws://192.168.1.20:${BRIDGE_PORT}/ws`)).toBe('192.168.1.20');
+    expect(bridgeLabel('ws://192.168.1.20:9000/ws')).toBe('192.168.1.20:9000');
   });
 });
 
