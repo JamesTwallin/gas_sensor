@@ -33,12 +33,20 @@ const FIELDS: Field[] = [
   { key: 'lightTheme', label: 'Light theme', hint: 'Easier to read in direct sun' },
   { key: 'keepAwake', label: 'Keep screen awake', hint: 'While connected or recording' },
   { key: 'driveLed', label: 'Drive board LED', hint: 'Green / amber / red from CH4 class' },
-  { key: 'warmupMs', label: 'Warm-up (min)', hint: 'From sensor power-on', scale: 60_000, min: 0 },
+  {
+    key: 'envCompensate',
+    label: 'Temperature / humidity correction',
+    hint: 'Correct the ppm estimate with the Figaro datasheet tables from the SHT40 reading. Off = assume 20 °C / 65 %RH',
+  },
+  { key: 'warmupMs', label: 'Warm-up (min)', hint: '0 = none (default). Only the LOW/MED/HIGH class waits for it', scale: 60_000, min: 0 },
   { key: 'bgWindowMs', label: 'Baseline window (min)', scale: 60_000, min: 0.5 },
   { key: 'bgPercentile', label: 'Baseline percentile', hint: '15 = 15th percentile', scale: 0.01, min: 1, max: 50 },
   { key: 'classWindowMs', label: 'Class window (min)', hint: 'HIGH/MED/LOW range', scale: 60_000, min: 1, max: 60 },
   { key: 'classRangeFloorMv', label: 'Class range floor (mV)', min: 0 },
   { key: 'intervalMs', label: 'Sample interval (ms)', hint: '100–5000, sent to the board', min: 100, max: 5000 },
+  { key: 'spikeWindowMs', label: 'Spike window (s)', hint: 'Slope is measured over this', scale: 1000, min: 0.25, max: 10 },
+  { key: 'spikeSigma', label: 'Spike sensitivity (σ)', hint: 'Lower = more sensitive; robust sigmas of recent slope noise', min: 1, max: 20 },
+  { key: 'spikeFloorMvPerS', label: 'Spike floor (mV/s)', hint: 'Slope below this is never a spike', min: 0 },
 ];
 
 function inputStyle(theme: Theme, wide: boolean): StyleProp<TextStyle> {
@@ -251,7 +259,8 @@ export function SettingsScreen({
 
       <H3>Concentration calibration</H3>
       <Hint>
-        The ppm estimate uses the Figaro datasheet curves, corrected for temperature and humidity. It needs Ro, the
+        The ppm estimate uses the Figaro datasheet curves, corrected for temperature and humidity when that switch is
+        on above. It needs Ro, the
         sensor&apos;s resistance in a known concentration, which varies 10× between parts. Put the connected board in a
         known gas, enter the concentration, and tap Set Ro. Stored per board.
       </Hint>

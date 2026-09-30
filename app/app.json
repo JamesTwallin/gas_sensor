@@ -59,11 +59,11 @@
       "expo-sharing",
       "expo-font"
     ],
+    "owner": "inorite-ltd",
     "extra": {
       "eas": {
-        "projectId": "c8914c6a-f14b-4980-bb40-418714dffbac"
+        "projectId": "a334d071-5624-4d42-a956-9685b8bb5a93"
       }
-    },
-    "owner": "james_servo"
+    }
   }
 }

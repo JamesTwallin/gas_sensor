@@ -115,10 +115,15 @@ don't regenerate over those edits.
 
 ## Before you power it
 
-- **Battery polarity.** J2 (JST-PH) is wired pin 1 = −, pin 2 = +. That
-  matches Adafruit and SparkFun cells, but cheap cells vary. Q1 blocks a reversed
-  cell (nothing gets damaged, it just won't power). Use a cell **with a built-in
-  protection circuit**; the board has no deep-discharge cutoff.
+- **Battery polarity.** J2 (JST-PH) is wired pin 1 = −, pin 2 = +. On the
+  fabricated rev B boards that puts **positive (red) on the pin nearer the
+  sensor end** of the board. The Pi Hut "2000mAh 3.7V LiPo Battery - JST-PH
+  Connector" arrived the other way round and needed its two crimps swapped in
+  the plug (2026-09-30); check any cell against this before plugging in. Q1
+  blocks a reversed cell (nothing gets damaged, it just won't power). Use a
+  cell **with a built-in protection circuit**; the board has no deep-discharge
+  cutoff. A future revision could replace Q1 with a four-MOSFET bridge to make
+  the input polarity-agnostic.
 - **The power switch** (SW1) switches the regulator enables, not the battery.
   The battery still charges when it's off.
 - **First bring-up:**

@@ -182,9 +182,14 @@ The app writes the rev A column set unchanged, so `tools/plot_map.py` and
 millis_since_boot,state,ch4_vout_mv,ch4_baseline_mv,ch4_dev_mv,
 lpg_vout_mv,lpg_baseline_mv,lpg_dev_mv,temp_c,humidity_pct,pressure_hpa,
 utc_iso8601,lat,lon,alt_m,sats,fix,
-ch4_rs_ohm,lpg_rs_ohm,vbat_mv,gps_accuracy_m,ch4_ppm_est,lpg_ppm_est
+ch4_rs_ohm,lpg_rs_ohm,vbat_mv,gps_accuracy_m,ch4_ppm_est,lpg_ppm_est,
+ch4_slope_mv_s,lpg_slope_mv_s,spike
 ```
 
+- `ch4_slope_mv_s` / `lpg_slope_mv_s` are the first derivative of VRL over the
+  app's spike window (default 1 s), and `spike` is `CH4`, `LPG`, `CH4+LPG` or
+  blank: the app's plume indicator (`app/src/core/spike.ts`, the same maths as
+  `tools/plot_spike.py`). A plume is a rising edge; slow drift is not.
 - `ch4_ppm_est` / `lpg_ppm_est` are the app's datasheet-curve estimates
   (`app/src/core/ppm.ts`: Rs/Ro power law with the Table 1 temperature and
   humidity correction, LPG referenced to iso-butane). They are only as good as

@@ -9,7 +9,8 @@
 //     ~280 mW each) and leaves through the lid grille: a chimney, not a sealed box.
 //   - The SHT40 end has its own vents top and bottom so it measures outside air,
 //     not case air.
-//   - Battery (1200 mAh, ~60 x 35 x 5 mm) lies under the board on the floor.
+//   - Battery lies under the board on the floor. Sized for the Pi Hut 2000 mAh
+//     cell (60 x 38 x 8 mm); a 1200 mAh cell (~60 x 35 x 5 mm) also fits.
 //   - The board rests on a ledge; one M2 screw at its right-hand hole stops it
 //     lifting. Four M2 screws hold the lid down.
 //
@@ -28,7 +29,7 @@ board_clear = 4.5;      // gap from board edge to wall (leaves room for the corn
 wall = 2.4;             // outer wall
 floor_t = 1.6;
 lid_t = 1.8;
-batt_h = 5.5;           // battery pocket height (1200 mAh cell is ~5 mm)
+batt_h = 8.5;           // battery pocket height (Pi Hut 2000 mAh cell is 8 mm; was 5.5 for a 1200 mAh)
 board_gap = 2.0;        // clearance under the board (solder joints, battery bulge)
 above_board = 7.0;      // clear height above the board (JST plug is the tallest part)
 corner_r = 4;           // outer corner radius
@@ -234,7 +235,7 @@ module board_mock() {
     color("dimgray") translate([bx(usb[0]) - 4.5, by(board_y - 6), board_z + board_t]) cube([9, 7.5, 3.3]);
     color("white") translate([bx(bat_conn[0]) - 4.6, by(0), board_z + board_t]) cube([9.2, 7, 6]);
     color("black") translate([bx(0), by(0.75), board_z + board_t]) cube([20.1, 15.4, 2.4]);
-    color("dimgray") translate([wall + 4, wall + 5, floor_t + 1.2]) cube([60, 35, batt_h - 1.2]);  // battery
+    color("dimgray") translate([wall + 4, wall + 3.5, floor_t + 1.2]) cube([60, 38, batt_h - 1.2]);  // battery (2000 mAh)
 }
 
 part = "assembly";

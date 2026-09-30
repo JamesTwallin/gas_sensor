@@ -80,6 +80,8 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
   const connected = state.linked && state.linkStatus === 'connected';
   const f = state.lastSample?.flags;
   const banners: [Severity, string][] = [];
+  if (connected && state.spikes.lastAt !== null && Date.now() - state.spikes.lastAt < 30_000)
+    banners.push(['critical', `Spike detected: ${state.spikes.lastText}`]);
   if (state.linked && state.linkStatus === 'reconnecting')
     banners.push(['warning', `Link lost, reconnecting · ${state.linkDetail}`]);
   if (connected && f?.heatersOff)

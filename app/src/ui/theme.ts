@@ -19,6 +19,8 @@ export interface Theme {
   ch4: string;
   lpg: string;
   baseline: string;
+  /** First-derivative trace on the live charts. */
+  slope: string;
   good: string;
   warning: string;
   critical: string;
@@ -44,6 +46,7 @@ export const DARK: Theme = {
   ch4: '#3583dd',
   lpg: '#d4762a',
   baseline: '#e8eaee',
+  slope: '#1fbf85',
   good: '#2fa363',
   warning: '#e6a11b',
   critical: '#d9453d',
@@ -67,6 +70,7 @@ export const LIGHT: Theme = {
   ch4: '#2a6fc4',
   lpg: '#b8621f',
   baseline: '#111318',
+  slope: '#0f9a6a',
   good: '#1f8f52',
   warning: '#c98a0e',
   critical: '#c73a33',

@@ -5,7 +5,7 @@ import { batteryPercent } from '../src/core/simulator';
 describe('chart data', () => {
   it('ChartBuffer keeps the span and slices by time', () => {
     const b = new ChartBuffer(1000);
-    for (let t = 0; t <= 2000; t += 250) b.push({ t, ch4: t, lpg: 0, baseline: null });
+    for (let t = 0; t <= 2000; t += 250) b.push({ t, ch4: t, lpg: 0, baseline: null, lpgBaseline: null });
     expect(b.all().map((p) => p.t)).toEqual([1250, 1500, 1750, 2000]);
     expect(b.since(1500).map((p) => p.t)).toEqual([1750, 2000]);
     expect(b.last?.t).toBe(2000);

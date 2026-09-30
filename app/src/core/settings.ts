@@ -24,6 +24,17 @@ export interface AppSettings extends ProcessingSettings {
   /** Light theme for bright sunlight (dark is the default). */
   lightTheme: boolean;
   /**
+   * Correct the ppm estimate for temperature and humidity using the Figaro
+   * datasheet tables (on by default). Off = treat every reading as taken at
+   * the datasheet reference conditions, 20 °C / 65 %RH. The raw load
+   * voltages, Rs and the HIGH/MED/LOW classifier are never compensated.
+   */
+  envCompensate: boolean;
+  /** Spike detector (core/spike.ts): derivative window (ms), robust-sigma threshold, floor (mV/s). */
+  spikeWindowMs: number;
+  spikeSigma: number;
+  spikeFloorMvPerS: number;
+  /**
    * Talk to the board through tools/serial_bridge.py on a PC (USB serial
    * relayed over Wi-Fi) instead of Bluetooth. Forced on where the BLE native
    * module is missing, i.e. in Expo Go.
@@ -40,7 +51,8 @@ export interface AppSettings extends ProcessingSettings {
  * baseline is provisional from the first sample and firms up as the window fills.
  */
 export const DEFAULT_PROCESSING: ProcessingSettings = {
-  warmupMs: 3 * 60_000,
+  warmupMs: 0, // no warm-up gate: everything is plotted and detected from the first sample
+
   bgWindowMs: 2 * 60_000,
   bgPercentile: 0.15,
   classWindowMs: 10 * 60_000,
@@ -54,6 +66,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   driveLed: true,
   keepAwake: true,
   lightTheme: false,
+  envCompensate: true,
+  spikeWindowMs: 1000,
+  spikeSigma: 4,
+  spikeFloorMvPerS: 25,
   usbBridge: false,
   bridgeHost: '',
 };
@@ -73,5 +89,7 @@ export function sanitizeSettings(raw: unknown): AppSettings {
     }
   }
   out.bgPercentile = Math.min(1, out.bgPercentile);
+  // Phones that stored the old 3 min default (before 2026-09-30) get the new no-warm-up default.
+  if (out.warmupMs === 3 * 60_000) out.warmupMs = 0;
   return out;
 }

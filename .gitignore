@@ -42,3 +42,4 @@ _autosave-*
 hardware/carrier_board/#auto_saved_files#
 hardware/carrier_board/production/*
 
+tools/bench/*

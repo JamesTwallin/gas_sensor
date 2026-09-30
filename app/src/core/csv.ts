@@ -26,6 +26,9 @@ export const CSV_COLUMNS = [
   'gps_accuracy_m',
   'ch4_ppm_est',
   'lpg_ppm_est',
+  'ch4_slope_mv_s',
+  'lpg_slope_mv_s',
+  'spike',
 ] as const;
 
 export const CSV_HEADER = CSV_COLUMNS.join(',');
@@ -63,6 +66,11 @@ export interface CsvRowInput {
   /** Datasheet-curve estimates (core/ppm.ts); blank when Rs is unknown. */
   ch4PpmEst?: number | null;
   lpgPpmEst?: number | null;
+  /** First derivative of VRL (core/spike.ts), mV/s; blank until the window fills. */
+  ch4SlopeMvPerS?: number | null;
+  lpgSlopeMvPerS?: number | null;
+  /** Which channels flagged a spike on this sample: '', 'CH4', 'LPG' or 'CH4+LPG'. */
+  spike?: string;
 }
 
 const pad = (n: number, w = 2) => String(n).padStart(w, '0');
@@ -116,6 +124,9 @@ export function formatCsvRow(r: CsvRowInput): string {
     g ? fmt(g.accuracyM, 1) : '',
     fmt(r.ch4PpmEst, 0),
     fmt(r.lpgPpmEst, 0),
+    fmt(r.ch4SlopeMvPerS, 1),
+    fmt(r.lpgSlopeMvPerS, 1),
+    r.spike ?? '',
   ];
   return cells.join(',');
 }

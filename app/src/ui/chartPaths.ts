@@ -2,18 +2,26 @@
 // everything that decides *where* a line goes lives here, pure and DOM-free, so
 // it is unit-tested.
 //
-// Both charts scale to the data rather than to 0..VC: clean-air VRL sits around
-// 3 V and a plume adds a few hundred mV, so a fixed scale hid the signal in the
-// top tenth of the plot. The y-range is the window's min..max, widened to at
-// least `rangeFloorMv` (the classifier's own range floor, so the chart and the
-// HIGH/MED/LOW thirds agree on what "a change" is) plus headroom, and it never
-// goes below 0.
+// Each chart shows ONE channel (CH4 or LPG): the two sit at different voltages
+// and respond with different slopes, so a shared axis flattened whichever one
+// moved less. Each scales to its own data rather than to 0..VC: clean-air VRL
+// sits around 3 V and a plume adds a few hundred mV, so a fixed scale hid the
+// signal in the top tenth of the plot. The y-range is the window's min..max,
+// widened to at least `rangeFloorMv` (the classifier's own range floor, so the
+// chart and the HIGH/MED/LOW thirds agree on what "a change" is) plus headroom,
+// and it never goes below 0.
 //
-//  - live:     CH4 VRL as a washed area + line, LPG as a line, CH4 baseline
-//              dotted; last 60 s.
-//  - overview: last 10 min of CH4, peak-per-column, current baseline ruled.
+//  - live:     VRL as a washed area + line, the first derivative on its own
+//              symmetric axis, spike samples marked; up to the last 60 s.
+//  - overview: up to the last 10 min, peak-per-column, spike ticks on top.
+//
+// Both charts fit their time axis to the data: the span is the time since the
+// oldest point on screen, clamped to [MIN_SPAN_MS, spanMs], so a fresh
+// connection fills the width instead of squeezing into the right-hand edge.
 
 import { peakPerColumn, type ChartPoint } from '../core/chartData';
+
+export type Series = 'ch4' | 'lpg';
 
 /** Smallest y-span the chart will show (mV): stops noise filling the plot. */
 export const DEFAULT_RANGE_FLOOR_MV = 150;
@@ -21,6 +29,18 @@ export const DEFAULT_RANGE_FLOOR_MV = 150;
 export const RANGE_PAD = 0.15;
 /** A gap longer than this between samples breaks the trace. */
 export const GAP_MS = 5000;
+/** The time axis never shrinks below this, however little data there is. */
+export const MIN_SPAN_MS = 5000;
+
+/** Effective span: time covered by the points, clamped to [MIN_SPAN_MS, spanMs]. */
+export function fitSpan(pts: readonly { t: number }[], now: number, spanMs: number): number {
+  if (!pts.length) return spanMs;
+  return Math.max(MIN_SPAN_MS, Math.min(spanMs, now - pts[0].t));
+}
+
+function spanLabel(ms: number): string {
+  return ms >= 120_000 ? `−${Math.round(ms / 60000)} min` : `−${Math.round(ms / 1000)} s`;
+}
 
 export interface ChartLayout {
   width: number;
@@ -50,6 +70,18 @@ export interface ChartFrame {
 export interface XY {
   x: number;
   y: number;
+}
+
+export const valueOf = (p: ChartPoint, s: Series): number => (s === 'ch4' ? p.ch4 : p.lpg);
+export const baselineOf = (p: ChartPoint, s: Series): number | null => (s === 'ch4' ? p.baseline : p.lpgBaseline);
+export const slopeOf = (p: ChartPoint, s: Series): number | null => (s === 'ch4' ? p.ch4Slope : p.lpgSlope) ?? null;
+export const spikeOf = (p: ChartPoint, s: Series): boolean => (s === 'ch4' ? p.ch4Spike : p.lpgSpike) === true;
+
+/** A round number of mV/s at or above the largest |slope| on screen, for the derivative axis. */
+export function slopeScale(maxAbs: number): number {
+  const steps = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+  for (const s of steps) if (maxAbs <= s) return s;
+  return Math.ceil(maxAbs / 10000) * 10000;
 }
 
 /** min..max of the values, widened to the floor and padded; clamped at 0. */
@@ -129,15 +161,13 @@ function area(pts: readonly XY[], axisY: number): string {
 }
 
 export interface LiveChart extends ChartFrame {
-  /** Filled CH4 areas, one per gap-free run. */
-  ch4Areas: string[];
-  ch4Lines: string[];
-  lpgLines: string[];
-  /** Dotted baseline, broken wherever there is no trusted baseline or a link gap. */
-  baselineLines: string[];
-  /** Newest point of each trace, for the end marker; null without data. */
-  ch4End: XY | null;
-  lpgEnd: XY | null;
+  /** Filled areas, one per gap-free run. */
+  areas: string[];
+  lines: string[];
+  /** Newest point of the trace, for the end marker; null without data. */
+  end: XY | null;
+  /** Where the trace sits on each sample the detector flagged. */
+  spikeMarks: XY[];
 }
 
 export function buildLiveChart(
@@ -146,61 +176,140 @@ export function buildLiveChart(
   spanMs: number,
   l: ChartLayout,
   rangeFloorMv = DEFAULT_RANGE_FLOOR_MV,
+  series: Series = 'ch4',
 ): LiveChart {
   const { yMin, yMax } = dataRange(
     (function* () {
-      for (const p of pts) {
-        yield p.ch4;
-        yield p.lpg;
-        if (p.baseline !== null) yield p.baseline;
-      }
+      for (const p of pts) yield valueOf(p, series);
     })(),
     rangeFloorMv,
   );
-  const f = frame(l, yMin, yMax, `−${Math.round(spanMs / 1000)} s`, 'now');
+  const span = fitSpan(pts, now, spanMs);
+  const f = frame(l, yMin, yMax, spanLabel(span), 'now');
   const y = makeY(l, yMin, yMax);
   const plotW = l.width - l.padL;
-  const x = (t: number) => l.padL + ((t - (now - spanMs)) / spanMs) * plotW;
+  const x = (t: number) => l.padL + ((t - (now - span)) / span) * plotW;
 
-  const ch4Areas: string[] = [];
-  const ch4Lines: string[] = [];
-  const lpgLines: string[] = [];
-  let ch4End: XY | null = null;
-  let lpgEnd: XY | null = null;
+  const areas: string[] = [];
+  const lines: string[] = [];
+  let end: XY | null = null;
   for (const run of runs(pts)) {
     if (run.length < 2) continue;
-    const ch4 = run.map((p) => ({ x: x(p.t), y: y(p.ch4) }));
-    const lpg = run.map((p) => ({ x: x(p.t), y: y(p.lpg) }));
-    ch4Areas.push(area(ch4, f.axisY));
-    ch4Lines.push(polyline(ch4));
-    lpgLines.push(polyline(lpg));
-    ch4End = ch4[ch4.length - 1];
-    lpgEnd = lpg[lpg.length - 1];
+    const xy = run.map((p) => ({ x: x(p.t), y: y(valueOf(p, series)) }));
+    areas.push(area(xy, f.axisY));
+    lines.push(polyline(xy));
+    end = xy[xy.length - 1];
   }
 
-  // The baseline breaks on a link gap and wherever there is no trusted baseline.
-  const baselineLines: string[] = [];
+  const spikeMarks: XY[] = [];
+  for (const p of pts) if (spikeOf(p, series)) spikeMarks.push({ x: x(p.t), y: y(valueOf(p, series)) });
+
+  return { ...f, areas, lines, end, spikeMarks };
+}
+
+// ---- derivative panel -----------------------------------------------------------
+// Drawn directly under the live chart, sharing its time axis (same fitSpan, same
+// x mapping) but with its own y-limits: the slopes' own min..max, always
+// including zero, with headroom. Zero is ruled; the spike threshold is ruled
+// when known; flagged samples are marked on the trace.
+
+const SLOPE_STEPS = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+
+export interface SlopeChart {
+  yMin: number;
+  yMax: number;
+  gridLines: GridLine[];
+  /** y of zero mV/s. */
+  zeroY: number;
+  lines: string[];
+  spikeMarks: XY[];
+  /** y of the current threshold, or null when none is known. */
+  thresholdY: number | null;
+  leftLabel: string;
+  rightLabel: string;
+}
+
+export function buildSlopeChart(
+  pts: readonly ChartPoint[],
+  now: number,
+  spanMs: number,
+  l: ChartLayout,
+  series: Series = 'ch4',
+  thresholdMvPerS: number | null = null,
+): SlopeChart {
+  let lo = 0;
+  let hi = 0;
+  for (const p of pts) {
+    const s = slopeOf(p, series);
+    if (s === null || !Number.isFinite(s)) continue;
+    if (s < lo) lo = s;
+    if (s > hi) hi = s;
+  }
+  if (thresholdMvPerS !== null && thresholdMvPerS > hi) hi = thresholdMvPerS;
+  // At least ±10 mV/s of range so a flat trace is a visible flat line, then headroom.
+  hi = Math.max(hi, 10);
+  lo = Math.min(lo, -10);
+  const pad = (hi - lo) * RANGE_PAD;
+  const yMin = lo - pad;
+  const yMax = hi + pad;
+  const y = makeY(l, yMin, yMax);
+
+  let step = SLOPE_STEPS[SLOPE_STEPS.length - 1];
+  for (const s of SLOPE_STEPS) {
+    if ((yMax - yMin) / s <= 4) {
+      step = s;
+      break;
+    }
+  }
+  const gridLines: GridLine[] = [];
+  for (let level = Math.ceil(yMin / step) * step; level <= yMax; level += step) {
+    if (level === 0 || level - yMin < step * 0.25 || yMax - level < step * 0.25) continue;
+    gridLines.push({ y: Math.round(y(level)) + 0.5, label: String(level) });
+  }
+
+  const span = fitSpan(pts, now, spanMs);
+  const plotW = l.width - l.padL;
+  const x = (t: number) => l.padL + ((t - (now - span)) / span) * plotW;
+
+  const lines: string[] = [];
   let seg: XY[] = [];
   let prevT = -Infinity;
   for (const p of pts) {
-    if (p.baseline === null || p.t - prevT > GAP_MS) {
-      if (seg.length > 1) baselineLines.push(polyline(seg));
+    const s = slopeOf(p, series);
+    if (s === null || !Number.isFinite(s) || p.t - prevT > GAP_MS) {
+      if (seg.length > 1) lines.push(polyline(seg));
       seg = [];
     }
     prevT = p.t;
-    if (p.baseline === null) continue;
-    seg.push({ x: x(p.t), y: y(p.baseline) });
+    if (s === null || !Number.isFinite(s)) continue;
+    seg.push({ x: x(p.t), y: y(s) });
   }
-  if (seg.length > 1) baselineLines.push(polyline(seg));
+  if (seg.length > 1) lines.push(polyline(seg));
 
-  return { ...f, ch4Areas, ch4Lines, lpgLines, baselineLines, ch4End, lpgEnd };
+  const spikeMarks: XY[] = [];
+  for (const p of pts) {
+    const s = slopeOf(p, series);
+    if (spikeOf(p, series) && s !== null && Number.isFinite(s)) spikeMarks.push({ x: x(p.t), y: y(s) });
+  }
+
+  return {
+    yMin,
+    yMax,
+    gridLines,
+    zeroY: Math.round(y(0)) + 0.5,
+    lines,
+    spikeMarks,
+    thresholdY: thresholdMvPerS !== null ? y(thresholdMvPerS) : null,
+    leftLabel: 'd/dt',
+    rightLabel: 'mV/s',
+  };
 }
 
 export interface OverviewChart extends ChartFrame {
-  ch4Areas: string[];
-  ch4Lines: string[];
-  /** Flat current-baseline rule across the window, or null when there is none. */
-  baselineRule: { x1: number; x2: number; y: number } | null;
+  areas: string[];
+  lines: string[];
+  /** x of every column that holds a flagged sample: tick marks along the top. */
+  spikeTicks: number[];
 }
 
 export function buildOverviewChart(
@@ -209,21 +318,21 @@ export function buildOverviewChart(
   spanMs: number,
   l: ChartLayout,
   rangeFloorMv = DEFAULT_RANGE_FLOOR_MV,
+  series: Series = 'ch4',
 ): OverviewChart {
   const plotW = l.width - l.padL;
   const cols = Math.max(1, Math.floor(plotW / 2)); // one column per 2 px
-  const t0 = now - spanMs;
-  const peaks = peakPerColumn(pts, t0, now, cols, (p) => p.ch4);
-  const last = pts.length ? pts[pts.length - 1] : null;
+  const span = fitSpan(pts, now, spanMs);
+  const t0 = now - span;
+  const peaks = peakPerColumn(pts, t0, now, cols, (p) => valueOf(p, series));
 
   const { yMin, yMax } = dataRange(
     (function* () {
-      for (const p of pts) if (p.t >= t0) yield p.ch4;
-      if (last && last.baseline !== null) yield last.baseline;
+      for (const p of pts) if (p.t >= t0) yield valueOf(p, series);
     })(),
     rangeFloorMv,
   );
-  const f = frame(l, yMin, yMax, `−${Math.round(spanMs / 60000)} min`, 'now');
+  const f = frame(l, yMin, yMax, spanLabel(span), 'now');
   const y = makeY(l, yMin, yMax);
   const colX = (col: number) => l.padL + ((col + 0.5) / cols) * plotW;
 
@@ -236,19 +345,21 @@ export function buildOverviewChart(
     else segs.push([p]);
   }
 
-  const ch4Areas: string[] = [];
-  const ch4Lines: string[] = [];
+  const areas: string[] = [];
+  const lines: string[] = [];
   for (const seg of segs) {
     if (seg.length < 2) continue;
     const xy = seg.map((p) => ({ x: colX(p.col), y: y(p.peak) }));
-    ch4Areas.push(area(xy, f.axisY));
-    ch4Lines.push(polyline(xy));
+    areas.push(area(xy, f.axisY));
+    lines.push(polyline(xy));
   }
 
-  const baselineRule =
-    last && last.baseline !== null
-      ? { x1: peaks.length ? colX(peaks[0].col) : l.padL, x2: l.width, y: y(last.baseline) }
-      : null;
+  const spikeCols = new Set<number>();
+  for (const p of pts) {
+    if (p.t < t0 || p.t > now || !spikeOf(p, series)) continue;
+    spikeCols.add(Math.min(cols - 1, Math.floor(((p.t - t0) / span) * cols)));
+  }
+  const spikeTicks = [...spikeCols].sort((a, b) => a - b).map(colX);
 
-  return { ...f, ch4Areas, ch4Lines, baselineRule };
+  return { ...f, areas, lines, spikeTicks };
 }

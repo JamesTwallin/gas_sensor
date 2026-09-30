@@ -22,6 +22,7 @@ import {
   type ChannelCalibration,
 } from './core/ppm';
 import { Processor, ledColour, type ProcessorOutput } from './core/processor';
+import { NO_SPIKE, SPIKE_BURST_GAP_MS, SpikeDetector, type SpikeResult } from './core/spike';
 import {
   DEFAULT_INFO,
   encodeIdentify,
@@ -70,6 +71,17 @@ export interface UiState {
   lastPpm: { ch4: number | null; lpg: number | null };
   /** Ro calibration for the connected board (datasheet-typical Ro where null). */
   calibration: Calibration;
+  /** Spike detector (core/spike.ts): latest per-channel result and the last burst. */
+  spikes: {
+    ch4: SpikeResult;
+    lpg: SpikeResult;
+    /** Phone epoch ms of the last new burst, null if none yet. */
+    lastAt: number | null;
+    /** e.g. "CH4 +812 mV/s". */
+    lastText: string | null;
+    /** Bursts since connecting. */
+    count: number;
+  };
   droppedPackets: number;
   badPackets: number;
   gpsStatus: GpsStatus;
@@ -101,6 +113,9 @@ export class AppController {
   private scan: ScanHandle | null = null;
   private lastSeq: number | null = null;
   private lastLedKey = '';
+  private spike = { ch4: new SpikeDetector(), lpg: new SpikeDetector() };
+  /** Device ms of the last sample flagged per channel, for burst grouping. */
+  private lastSpikeT = { ch4: -Infinity, lpg: -Infinity };
   private frame: number | null = null;
   private clock: ReturnType<typeof setInterval> | null = null;
   private appStateSub: { remove(): void } | null = null;
@@ -109,6 +124,7 @@ export class AppController {
 
   constructor(settings: AppSettings) {
     this.processor = new Processor(settings);
+    this.spike = { ch4: new SpikeDetector(settings), lpg: new SpikeDetector(settings) };
     this.chart = new ChartBuffer(settings.classWindowMs);
     this.recorder = new Recorder(() => this.syncRecorder());
     this.gps = new GpsService((fix, status, detail) => {
@@ -127,6 +143,7 @@ export class AppController {
       lastRs: { ch4: null, lpg: null },
       lastPpm: { ch4: null, lpg: null },
       calibration: { ...NO_CALIBRATION },
+      spikes: { ch4: NO_SPIKE, lpg: NO_SPIKE, lastAt: null, lastText: null, count: 0 },
       droppedPackets: 0,
       badPackets: 0,
       gpsStatus: 'off',
@@ -285,6 +302,10 @@ export class AppController {
   private async openLink(l: DeviceLink): Promise<void> {
     this.processor.reset();
     this.chart.clear();
+    this.spike.ch4.reset();
+    this.spike.lpg.reset();
+    this.lastSpikeT = { ch4: -Infinity, lpg: -Infinity };
+    this.patch({ spikes: { ch4: NO_SPIKE, lpg: NO_SPIKE, lastAt: null, lastText: null, count: 0 } }, false);
     this.lastSeq = null;
     if (l instanceof SimDeviceLink) l.onLed = (rgb) => this.patch({ simLed: rgb });
     this.link = l;
@@ -348,9 +369,12 @@ export class AppController {
       lpg: rsOhm(lpgMv, info.rl_ohm, info.vc_mv),
     };
     const cal = this.state.calibration;
+    // With compensation off, null T/RH makes the curves use their reference conditions.
+    const envT = settings.envCompensate ? s.tempC : null;
+    const envRh = settings.envCompensate ? s.humidityPct : null;
     const ppm = {
-      ch4: estimatePpm(rs.ch4, roFor(cal.ch4, TGS2611), s.tempC, s.humidityPct, TGS2611),
-      lpg: estimatePpm(rs.lpg, roFor(cal.lpg, TGS2610), s.tempC, s.humidityPct, TGS2610),
+      ch4: estimatePpm(rs.ch4, roFor(cal.ch4, TGS2611), envT, envRh, TGS2611),
+      lpg: estimatePpm(rs.lpg, roFor(cal.lpg, TGS2610), envT, envRh, TGS2610),
     };
     const out = this.processor.push({
       t: s.msSinceBoot,
@@ -364,12 +388,46 @@ export class AppController {
     if (out.rebooted) this.chart.clear();
     if (s.flags.button) this.toast('BOOT pressed: re-zeroing baseline');
 
+    // Spike detection on the load voltages whenever the heaters are on. It is
+    // not gated on warm-up: the first seconds after power-on ramp steeply and
+    // may flag, which is preferable to a blank derivative trace.
+    const heatersOn = out.state !== 'HEATER_OFF';
+    if (!heatersOn || out.rebooted) {
+      this.spike.ch4.reset();
+      this.spike.lpg.reset();
+    }
+    const sp = heatersOn
+      ? { ch4: this.spike.ch4.push(s.msSinceBoot, ch4Mv), lpg: this.spike.lpg.push(s.msSinceBoot, lpgMv) }
+      : { ch4: NO_SPIKE, lpg: NO_SPIKE };
+    const bursts: string[] = [];
+    for (const ch of ['ch4', 'lpg'] as const) {
+      if (!sp[ch].spike) continue;
+      if (s.msSinceBoot - this.lastSpikeT[ch] > SPIKE_BURST_GAP_MS) {
+        bursts.push(`${ch.toUpperCase()} +${Math.round(sp[ch].slopeMvPerS ?? 0)} mV/s`);
+      }
+      this.lastSpikeT[ch] = s.msSinceBoot;
+    }
+    let spikes = { ...this.state.spikes, ch4: sp.ch4, lpg: sp.lpg };
+    if (bursts.length) {
+      const text = bursts.join(', ');
+      spikes = { ...spikes, lastAt: phoneTimeMs, lastText: text, count: spikes.count + bursts.length };
+      this.toast(`Spike: ${text}`);
+      // Three white blinks on the board (opcode 0x02) so a plume is visible without the phone.
+      if (settings.driveLed && this.link) void this.link.control(encodeIdentify());
+    }
+    const spikeText = sp.ch4.spike && sp.lpg.spike ? 'CH4+LPG' : sp.ch4.spike ? 'CH4' : sp.lpg.spike ? 'LPG' : '';
+
     const baselineValid = out.state === 'RUNNING';
     this.chart.push({
       t: s.msSinceBoot,
       ch4: ch4Mv,
       lpg: lpgMv,
       baseline: baselineValid ? out.ch4.baselineMv : null,
+      lpgBaseline: baselineValid ? out.lpg.baselineMv : null,
+      ch4Slope: sp.ch4.slopeMvPerS,
+      lpgSlope: sp.lpg.slopeMvPerS,
+      ch4Spike: sp.ch4.spike,
+      lpgSpike: sp.lpg.spike,
     });
 
     if (this.recorder.recording) {
@@ -391,6 +449,9 @@ export class AppController {
           vbatMv: s.vbatMv,
           ch4PpmEst: ppm.ch4,
           lpgPpmEst: ppm.lpg,
+          ch4SlopeMvPerS: sp.ch4.slopeMvPerS,
+          lpgSlopeMvPerS: sp.lpg.slopeMvPerS,
+          spike: spikeText,
         }),
       );
     }
@@ -410,6 +471,7 @@ export class AppController {
         lastOut: out,
         lastRs: rs,
         lastPpm: ppm,
+        spikes,
         droppedPackets: dropped,
         recRows: this.recorder.rows,
         chartTick: this.state.chartTick + 1,
@@ -446,8 +508,9 @@ export class AppController {
       return;
     }
     const curve = channel === 'ch4' ? TGS2611 : TGS2610;
+    const comp = this.state.settings.envCompensate;
     const rec: ChannelCalibration = {
-      roOhm: roFromKnownPpm(rs, knownPpm, s.tempC, s.humidityPct, curve),
+      roOhm: roFromKnownPpm(rs, knownPpm, comp ? s.tempC : null, comp ? s.humidityPct : null, curve),
       ppm: knownPpm,
       at: Date.now(),
       tempC: s.tempC,
@@ -516,6 +579,8 @@ export class AppController {
     this.patch({ settings });
     void saveSettings(settings);
     this.processor.updateSettings(settings);
+    this.spike.ch4.updateSettings(settings);
+    this.spike.lpg.updateSettings(settings);
     this.chart.spanMs = settings.classWindowMs;
     if (key === 'intervalMs' && this.link) void this.link.control(encodeSetInterval(settings.intervalMs));
     if (key === 'driveLed') this.lastLedKey = '';
