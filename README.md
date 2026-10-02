@@ -83,10 +83,7 @@ shows which side is positive.
    board.
 5. **Plug in the battery**, after checking the wires (above). Plugging in the
    USB-C cable charges it.
-6. **Leave it switched on for about a week**, plugged into a USB charger,
-   before trusting it. New sensors need 4 to 7 days of running before their
-   readings settle down.
-7. **Go for a walk.** Switch the board on, open the app, tap **Connect**, pick
+6. **Go for a walk.** Switch the board on, open the app, tap **Connect**, pick
    your board from the list, and tap **Record**.
 
 A quick way to check it works: let a little gas out of an unlit cigarette
