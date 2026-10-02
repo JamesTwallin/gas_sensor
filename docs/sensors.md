@@ -6,6 +6,18 @@ here for provenance and to inform the firmware. Figures cited are from the
 documents. Where a value is read off a graph rather than a table it is marked
 approximate.
 
+> **Which board this describes.** These notes were written for the rev A
+> prototype, which used the NGM2611 / LPM2610 *modules*. The current board
+> (rev B / C, [phone_board.md](phone_board.md)) mounts the same TGS2611-E00 and
+> TGS2610-D00 elements bare, with its own load resistor and an SHT40 instead of
+> a BME280. Everything below about the elements (part spread, sensitivity shape,
+> temperature and humidity, warm-up, field cautions) applies to it. What
+> changes is that Rs is now measurable, so the app can apply the Table 1
+> correction and estimate ppm from the datasheet curves
+> (`app/src/core/ppm.ts`). That estimate is still only indicative until a board
+> is calibrated in a known gas, and the app treats the slope of the signal, not
+> its level, as the plume indicator.
+
 ## What is actually inside the modules
 
 - **NGM2611-E13** (methane) contains a **TGS2611-E00** element plus a temperature

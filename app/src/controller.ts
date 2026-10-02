@@ -1,6 +1,5 @@
-// App controller: the port of the web app's src/main.ts. All signal processing
-// lives in src/core (pure, tested); this wires BLE/simulator -> core -> UI state,
-// GPS, recording and settings.
+// App controller. All signal processing lives in src/core (pure, tested); this
+// wires BLE/simulator -> core -> UI state, GPS, recording and settings.
 //
 // It is a plain class rather than React state because samples arrive at 4 Hz and
 // drive mutable engines (Processor, ChartBuffer, Recorder). React subscribes with
@@ -22,7 +21,7 @@ import {
   type ChannelCalibration,
 } from './core/ppm';
 import { Processor, ledColour, type ProcessorOutput } from './core/processor';
-import { NO_SPIKE, SPIKE_BURST_GAP_MS, SpikeDetector, type SpikeResult } from './core/spike';
+import { NO_SPIKE, SPIKE_BURST_GAP_MS, SPIKE_HOLD_MS, SpikeDetector, type SpikeResult } from './core/spike';
 import {
   DEFAULT_INFO,
   encodeIdentify,
@@ -46,6 +45,8 @@ import { saveSettings } from './services/settingsStore';
 import { SimDeviceLink } from './services/simDevice';
 
 export const LIVE_SPAN_MS = 60_000;
+/** History kept for the peak-slope overview strip. */
+export const OVERVIEW_SPAN_MS = 10 * 60_000;
 
 export type Rgb = [number, number, number];
 
@@ -75,6 +76,8 @@ export interface UiState {
   spikes: {
     ch4: SpikeResult;
     lpg: SpikeResult;
+    /** A sample was flagged within the last SPIKE_HOLD_MS: what the card, the LED and presentation mode show. */
+    active: { ch4: boolean; lpg: boolean };
     /** Phone epoch ms of the last new burst, null if none yet. */
     lastAt: number | null;
     /** e.g. "CH4 +812 mV/s". */
@@ -102,6 +105,15 @@ export interface UiState {
   chartTick: number;
 }
 
+const IDLE_SPIKES: UiState['spikes'] = {
+  ch4: NO_SPIKE,
+  lpg: NO_SPIKE,
+  active: { ch4: false, lpg: false },
+  lastAt: null,
+  lastText: null,
+  count: 0,
+};
+
 export class AppController {
   private listeners = new Set<() => void>();
   private state: UiState;
@@ -125,7 +137,7 @@ export class AppController {
   constructor(settings: AppSettings) {
     this.processor = new Processor(settings);
     this.spike = { ch4: new SpikeDetector(settings), lpg: new SpikeDetector(settings) };
-    this.chart = new ChartBuffer(settings.classWindowMs);
+    this.chart = new ChartBuffer(OVERVIEW_SPAN_MS);
     this.recorder = new Recorder(() => this.syncRecorder());
     this.gps = new GpsService((fix, status, detail) => {
       this.patch({ gpsFix: fix, gpsStatus: status, gpsDetail: detail ?? '' });
@@ -143,7 +155,7 @@ export class AppController {
       lastRs: { ch4: null, lpg: null },
       lastPpm: { ch4: null, lpg: null },
       calibration: { ...NO_CALIBRATION },
-      spikes: { ch4: NO_SPIKE, lpg: NO_SPIKE, lastAt: null, lastText: null, count: 0 },
+      spikes: IDLE_SPIKES,
       droppedPackets: 0,
       badPackets: 0,
       gpsStatus: 'off',
@@ -305,7 +317,7 @@ export class AppController {
     this.spike.ch4.reset();
     this.spike.lpg.reset();
     this.lastSpikeT = { ch4: -Infinity, lpg: -Infinity };
-    this.patch({ spikes: { ch4: NO_SPIKE, lpg: NO_SPIKE, lastAt: null, lastText: null, count: 0 } }, false);
+    this.patch({ spikes: IDLE_SPIKES }, false);
     this.lastSeq = null;
     if (l instanceof SimDeviceLink) l.onLed = (rgb) => this.patch({ simLed: rgb });
     this.link = l;
@@ -380,13 +392,11 @@ export class AppController {
       t: s.msSinceBoot,
       ch4Mv,
       lpgMv,
-      button: s.flags.button,
       heatersOff: s.flags.heatersOff,
     });
     // A board restart resets the processor to WARMUP, which the state card
     // already shows; no toast, it fired on every bench reflash and power cycle.
     if (out.rebooted) this.chart.clear();
-    if (s.flags.button) this.toast('BOOT pressed: re-zeroing baseline');
 
     // Spike detection on the load voltages whenever the heaters are on. It is
     // not gated on warm-up: the first seconds after power-on ramp steeply and
@@ -395,19 +405,24 @@ export class AppController {
     if (!heatersOn || out.rebooted) {
       this.spike.ch4.reset();
       this.spike.lpg.reset();
+      // Device time restarted (or is about to): old spike times no longer compare.
+      this.lastSpikeT = { ch4: -Infinity, lpg: -Infinity };
     }
     const sp = heatersOn
       ? { ch4: this.spike.ch4.push(s.msSinceBoot, ch4Mv), lpg: this.spike.lpg.push(s.msSinceBoot, lpgMv) }
       : { ch4: NO_SPIKE, lpg: NO_SPIKE };
     const bursts: string[] = [];
+    const active = { ch4: false, lpg: false };
     for (const ch of ['ch4', 'lpg'] as const) {
-      if (!sp[ch].spike) continue;
-      if (s.msSinceBoot - this.lastSpikeT[ch] > SPIKE_BURST_GAP_MS) {
-        bursts.push(`${ch.toUpperCase()} +${Math.round(sp[ch].slopeMvPerS ?? 0)} mV/s`);
+      if (sp[ch].spike) {
+        if (s.msSinceBoot - this.lastSpikeT[ch] > SPIKE_BURST_GAP_MS) {
+          bursts.push(`${ch.toUpperCase()} +${Math.round(sp[ch].slopeMvPerS ?? 0)} mV/s`);
+        }
+        this.lastSpikeT[ch] = s.msSinceBoot;
       }
-      this.lastSpikeT[ch] = s.msSinceBoot;
+      active[ch] = s.msSinceBoot - this.lastSpikeT[ch] <= SPIKE_HOLD_MS;
     }
-    let spikes = { ...this.state.spikes, ch4: sp.ch4, lpg: sp.lpg };
+    let spikes = { ...this.state.spikes, ch4: sp.ch4, lpg: sp.lpg, active };
     if (bursts.length) {
       const text = bursts.join(', ');
       spikes = { ...spikes, lastAt: phoneTimeMs, lastText: text, count: spikes.count + bursts.length };
@@ -417,13 +432,10 @@ export class AppController {
     }
     const spikeText = sp.ch4.spike && sp.lpg.spike ? 'CH4+LPG' : sp.ch4.spike ? 'CH4' : sp.lpg.spike ? 'LPG' : '';
 
-    const baselineValid = out.state === 'RUNNING';
     this.chart.push({
       t: s.msSinceBoot,
       ch4: ch4Mv,
       lpg: lpgMv,
-      baseline: baselineValid ? out.ch4.baselineMv : null,
-      lpgBaseline: baselineValid ? out.lpg.baselineMv : null,
       ch4Slope: sp.ch4.slopeMvPerS,
       lpgSlope: sp.lpg.slopeMvPerS,
       ch4Spike: sp.ch4.spike,
@@ -457,7 +469,7 @@ export class AppController {
     }
 
     if (settings.driveLed && this.link) {
-      const rgb = ledColour(out.state, out.ch4.level);
+      const rgb = ledColour(out.state, active.ch4);
       const key = rgb.join(',');
       if (key !== this.lastLedKey) {
         this.lastLedKey = key;
@@ -478,11 +490,6 @@ export class AppController {
       },
       false,
     );
-  }
-
-  requestRezero(): void {
-    this.processor.requestRezero();
-    this.toast('Re-zeroing baseline');
   }
 
   identify(): void {
@@ -581,7 +588,6 @@ export class AppController {
     this.processor.updateSettings(settings);
     this.spike.ch4.updateSettings(settings);
     this.spike.lpg.updateSettings(settings);
-    this.chart.spanMs = settings.classWindowMs;
     if (key === 'intervalMs' && this.link) void this.link.control(encodeSetInterval(settings.intervalMs));
     if (key === 'driveLed') this.lastLedKey = '';
     if ((key === 'simulate' || key === 'usbBridge' || key === 'bridgeHost') && this.link) {
@@ -598,10 +604,6 @@ export class AppController {
 
   get simulatorAttached(): boolean {
     return this.simLink() !== null;
-  }
-
-  simPressButton(): void {
-    this.simLink()?.board.pressButton();
   }
 
   simDropLink(): void {

@@ -34,6 +34,12 @@ export const SPIKE_NOISE_WINDOW_MS = 120_000;
 const MIN_NOISE_SAMPLES = 20;
 /** Consecutive spike samples closer than this belong to the same burst. */
 export const SPIKE_BURST_GAP_MS = 5000;
+/**
+ * A flagged sample keeps its channel "spiking" for this long, so the state
+ * card, the board LED and a video frame hold the alert instead of flickering
+ * at the sample rate.
+ */
+export const SPIKE_HOLD_MS = 2000;
 
 export interface SpikeResult {
   /** mV/s over the window; null until the window has filled. */

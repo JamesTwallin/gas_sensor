@@ -13,9 +13,8 @@
 /docs/
 /firmware/
 /hardware/
-/src/
+/legacy/
 /tools/
-/platformio.ini
 *.csv
 *.mp4
 *.log

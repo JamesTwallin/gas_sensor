@@ -7,11 +7,14 @@ part, pin map, BLE protocol) is [docs/phone_board.md](../../docs/phone_board.md)
 
 ![top](preview/render_top.png)
 
-**Status: rev C is rev B compacted, not yet fabricated.** Rev B (66 × 36 mm) was
-fabricated and assembled at JLCPCB and passed bring-up on 2026-09-28: it
-enumerates over native USB, flashes, and `firmware/phone_board` reports the
-ADS1115, the SHT40, a 5.02 V heater rail and both Figaro sensors on USB power.
-BLE and battery operation are not yet exercised.
+**Status: rev C is the current design, and the one to build.** It is rev B
+compacted, with the same schematic and parts; this layout has not been
+fabricated yet. Rev B (66 × 36 mm, git tag `rev-b`) was fabricated and assembled
+at JLCPCB and passed bring-up on 2026-09-28: it enumerates over native USB,
+flashes, and `firmware/phone_board` reports the ADS1115, the SHT40, a 5.02 V
+heater rail and both Figaro sensors on USB power. The Bluetooth link to the
+phone app was confirmed on the same board. Battery operation is not yet
+exercised.
 
 Rev C keeps rev B's schematic and parts, shrinks the board from 66 × 36 to
 60 × 33 mm (17 % less area) and gives it a business end:

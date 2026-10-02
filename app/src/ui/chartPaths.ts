@@ -7,15 +7,16 @@
 // moved less. Each scales to its own data rather than to 0..VC: clean-air VRL
 // sits around 3 V and a plume adds a few hundred mV, so a fixed scale hid the
 // signal in the top tenth of the plot. The y-range is the window's min..max,
-// widened to at least `rangeFloorMv` (the classifier's own range floor, so the
-// chart and the HIGH/MED/LOW thirds agree on what "a change" is) plus headroom,
-// and it never goes below 0.
+// widened to at least `rangeFloorMv` (so noise does not fill the plot) plus
+// headroom, and it never goes below 0.
 //
-//  - live:     VRL as a washed area + line, the first derivative on its own
-//              symmetric axis, spike samples marked; up to the last 60 s.
-//  - overview: up to the last 10 min, peak-per-column, spike ticks on top.
+//  - slope:    the first derivative on its own axis, zero and the spike
+//              threshold ruled, spike samples marked; up to the last 60 s.
+//              This is the plume indicator and the chart that matters.
+//  - live:     VRL as a washed area + line under it, for context.
+//  - overview: peak slope per column over up to the last 10 min.
 //
-// Both charts fit their time axis to the data: the span is the time since the
+// All of them fit their time axis to the data: the span is the time since the
 // oldest point on screen, clamped to [MIN_SPAN_MS, spanMs], so a fresh
 // connection fills the width instead of squeezing into the right-hand edge.
 
@@ -73,7 +74,6 @@ export interface XY {
 }
 
 export const valueOf = (p: ChartPoint, s: Series): number => (s === 'ch4' ? p.ch4 : p.lpg);
-export const baselineOf = (p: ChartPoint, s: Series): number | null => (s === 'ch4' ? p.baseline : p.lpgBaseline);
 export const slopeOf = (p: ChartPoint, s: Series): number | null => (s === 'ch4' ? p.ch4Slope : p.lpgSlope) ?? null;
 export const spikeOf = (p: ChartPoint, s: Series): boolean => (s === 'ch4' ? p.ch4Spike : p.lpgSpike) === true;
 
@@ -208,10 +208,10 @@ export function buildLiveChart(
 }
 
 // ---- derivative panel -----------------------------------------------------------
-// Drawn directly under the live chart, sharing its time axis (same fitSpan, same
-// x mapping) but with its own y-limits: the slopes' own min..max, always
-// including zero, with headroom. Zero is ruled; the spike threshold is ruled
-// when known; flagged samples are marked on the trace.
+// Shares the live chart's time axis (same fitSpan, same x mapping) but has its
+// own y-limits: the slopes' own min..max, always including zero, with headroom.
+// Zero is ruled; the spike threshold is ruled when known; flagged samples are
+// marked on the trace.
 
 const SLOPE_STEPS = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
 
@@ -229,21 +229,30 @@ export interface SlopeChart {
   rightLabel: string;
 }
 
-export function buildSlopeChart(
-  pts: readonly ChartPoint[],
-  now: number,
-  spanMs: number,
+interface SlopeSample {
+  t: number;
+  slope: number | null;
+  spike: boolean;
+}
+
+/** Shared by the live panel and the overview: samples in, paths and rules out. */
+function slopeGeometry(
+  samples: readonly SlopeSample[],
+  t0: number,
+  span: number,
   l: ChartLayout,
-  series: Series = 'ch4',
-  thresholdMvPerS: number | null = null,
+  thresholdMvPerS: number | null,
+  gapMs: number,
+  leftLabel: string,
+  rightLabel: string,
 ): SlopeChart {
+  const ok = (s: number | null): s is number => s !== null && Number.isFinite(s);
   let lo = 0;
   let hi = 0;
-  for (const p of pts) {
-    const s = slopeOf(p, series);
-    if (s === null || !Number.isFinite(s)) continue;
-    if (s < lo) lo = s;
-    if (s > hi) hi = s;
+  for (const p of samples) {
+    if (!ok(p.slope)) continue;
+    if (p.slope < lo) lo = p.slope;
+    if (p.slope > hi) hi = p.slope;
   }
   if (thresholdMvPerS !== null && thresholdMvPerS > hi) hi = thresholdMvPerS;
   // At least ±10 mV/s of range so a flat trace is a visible flat line, then headroom.
@@ -267,30 +276,25 @@ export function buildSlopeChart(
     gridLines.push({ y: Math.round(y(level)) + 0.5, label: String(level) });
   }
 
-  const span = fitSpan(pts, now, spanMs);
   const plotW = l.width - l.padL;
-  const x = (t: number) => l.padL + ((t - (now - span)) / span) * plotW;
+  const x = (t: number) => l.padL + ((t - t0) / span) * plotW;
 
   const lines: string[] = [];
+  const spikeMarks: XY[] = [];
   let seg: XY[] = [];
   let prevT = -Infinity;
-  for (const p of pts) {
-    const s = slopeOf(p, series);
-    if (s === null || !Number.isFinite(s) || p.t - prevT > GAP_MS) {
+  for (const p of samples) {
+    if (!ok(p.slope) || p.t - prevT > gapMs) {
       if (seg.length > 1) lines.push(polyline(seg));
       seg = [];
     }
     prevT = p.t;
-    if (s === null || !Number.isFinite(s)) continue;
-    seg.push({ x: x(p.t), y: y(s) });
+    if (!ok(p.slope)) continue;
+    const at = { x: x(p.t), y: y(p.slope) };
+    seg.push(at);
+    if (p.spike) spikeMarks.push(at);
   }
   if (seg.length > 1) lines.push(polyline(seg));
-
-  const spikeMarks: XY[] = [];
-  for (const p of pts) {
-    const s = slopeOf(p, series);
-    if (spikeOf(p, series) && s !== null && Number.isFinite(s)) spikeMarks.push({ x: x(p.t), y: y(s) });
-  }
 
   return {
     yMin,
@@ -300,66 +304,51 @@ export function buildSlopeChart(
     lines,
     spikeMarks,
     thresholdY: thresholdMvPerS !== null ? y(thresholdMvPerS) : null,
-    leftLabel: 'd/dt',
-    rightLabel: 'mV/s',
+    leftLabel,
+    rightLabel,
   };
 }
 
-export interface OverviewChart extends ChartFrame {
-  areas: string[];
-  lines: string[];
-  /** x of every column that holds a flagged sample: tick marks along the top. */
-  spikeTicks: number[];
-}
-
-export function buildOverviewChart(
+export function buildSlopeChart(
   pts: readonly ChartPoint[],
   now: number,
   spanMs: number,
   l: ChartLayout,
-  rangeFloorMv = DEFAULT_RANGE_FLOOR_MV,
   series: Series = 'ch4',
-): OverviewChart {
+  thresholdMvPerS: number | null = null,
+): SlopeChart {
+  const span = fitSpan(pts, now, spanMs);
+  const samples = pts.map((p) => ({ t: p.t, slope: slopeOf(p, series), spike: spikeOf(p, series) }));
+  return slopeGeometry(samples, now - span, span, l, thresholdMvPerS, GAP_MS, spanLabel(span), 'now');
+}
+
+/**
+ * The overview strip: the largest slope in each 2 px column over up to the
+ * last `spanMs`, so a plume edge a few samples long is not lost between
+ * pixels. A column is marked when any sample in it was flagged.
+ */
+export function buildSlopeOverview(
+  pts: readonly ChartPoint[],
+  now: number,
+  spanMs: number,
+  l: ChartLayout,
+  series: Series = 'ch4',
+  thresholdMvPerS: number | null = null,
+): SlopeChart {
   const plotW = l.width - l.padL;
-  const cols = Math.max(1, Math.floor(plotW / 2)); // one column per 2 px
+  const cols = Math.max(1, Math.floor(plotW / 2));
   const span = fitSpan(pts, now, spanMs);
   const t0 = now - span;
-  const peaks = peakPerColumn(pts, t0, now, cols, (p) => valueOf(p, series));
-
-  const { yMin, yMax } = dataRange(
-    (function* () {
-      for (const p of pts) if (p.t >= t0) yield valueOf(p, series);
-    })(),
-    rangeFloorMv,
-  );
-  const f = frame(l, yMin, yMax, spanLabel(span), 'now');
-  const y = makeY(l, yMin, yMax);
-  const colX = (col: number) => l.padL + ((col + 0.5) / cols) * plotW;
-
-  // Columns without samples break the line (so a link drop reads as a gap).
-  const maxColGap = Math.ceil((GAP_MS / spanMs) * cols) + 1;
-  const segs: { col: number; peak: number }[][] = [];
-  for (const p of peaks) {
-    const seg = segs[segs.length - 1];
-    if (seg && p.col - seg[seg.length - 1].col <= maxColGap) seg.push(p);
-    else segs.push([p]);
-  }
-
-  const areas: string[] = [];
-  const lines: string[] = [];
-  for (const seg of segs) {
-    if (seg.length < 2) continue;
-    const xy = seg.map((p) => ({ x: colX(p.col), y: y(p.peak) }));
-    areas.push(area(xy, f.axisY));
-    lines.push(polyline(xy));
-  }
+  const colMs = span / cols;
+  const peaks = peakPerColumn(pts, t0, now, cols, (p) => slopeOf(p, series) ?? -Infinity);
 
   const spikeCols = new Set<number>();
   for (const p of pts) {
     if (p.t < t0 || p.t > now || !spikeOf(p, series)) continue;
-    spikeCols.add(Math.min(cols - 1, Math.floor(((p.t - t0) / span) * cols)));
+    spikeCols.add(Math.min(cols - 1, Math.floor((p.t - t0) / colMs)));
   }
-  const spikeTicks = [...spikeCols].sort((a, b) => a - b).map(colX);
 
-  return { ...f, areas, lines, spikeTicks };
+  const samples = peaks.map((p) => ({ t: t0 + (p.col + 0.5) * colMs, slope: p.peak, spike: spikeCols.has(p.col) }));
+  // Columns without samples break the line (so a link drop reads as a gap).
+  return slopeGeometry(samples, t0, span, l, thresholdMvPerS, GAP_MS + 2 * colMs, spanLabel(span), 'now');
 }

@@ -1,4 +1,4 @@
-// History for the charts: the last N minutes of VRL + baseline per channel, and
+// History for the charts: the last N minutes of VRL + slope per channel, and
 // the rev A peak-per-column decimation for the overview (so a brief plume is
 // not lost between pixels). Pure, no DOM.
 
@@ -6,11 +6,7 @@ export interface ChartPoint {
   t: number;
   ch4: number;
   lpg: number;
-  /** CH4 baseline; null while there is no trusted baseline (warm-up, heaters off). */
-  baseline: number | null;
-  /** LPG baseline, same rule. */
-  lpgBaseline: number | null;
-  /** First derivative of VRL (core/spike.ts), mV/s; null/undefined until the window fills or outside RUNNING. */
+  /** First derivative of VRL (core/spike.ts), mV/s; null/undefined until the window fills or while the heaters are off. */
   ch4Slope?: number | null;
   lpgSlope?: number | null;
   /** Spike flagged on this sample. */

@@ -17,7 +17,7 @@ Both board generations are understood, detected per row:
   rev B (firmware/phone_board): the bench CSV the firmware prints alongside
         its BLE notifications. Taps, T/RH, VBAT, heater rail and flags are
         relayed unchanged.
-  rev A (src/main.cpp):         the SD-card CSV. VOUT is the load voltage, so
+  rev A (legacy/rev_a/src/main.cpp): the SD-card CSV. VOUT is the load voltage, so
         it is sent as tap = VOUT / 2 with tap_ratio 2.0 (the app rebuilds
         VRL = VOUT). No battery on rev A: vbat = 0, flag USB power set.
 

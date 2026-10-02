@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TimeWindow, classifyLevel, nthElement, percentile } from '../src/core/windows';
+import { TimeWindow, nthElement, percentile } from '../src/core/windows';
 
 describe('percentile (rev A: sorted[floor(p*(n-1))])', () => {
   it('matches the sorted index', () => {
@@ -77,27 +77,5 @@ describe('TimeWindow', () => {
     const w = new TimeWindow(1000);
     expect(w.min()).toBeNull();
     expect(w.max()).toBeNull();
-  });
-});
-
-describe('classifyLevel', () => {
-  it('thirds of the window range (0.34 / 0.67 as rev A)', () => {
-    expect(classifyLevel(1000, 1000, 2000, 150)).toBe('LOW');
-    expect(classifyLevel(1339, 1000, 2000, 150)).toBe('LOW');
-    expect(classifyLevel(1340, 1000, 2000, 150)).toBe('MED');
-    expect(classifyLevel(1669, 1000, 2000, 150)).toBe('MED');
-    expect(classifyLevel(1670, 1000, 2000, 150)).toBe('HIGH');
-    expect(classifyLevel(2000, 1000, 2000, 150)).toBe('HIGH');
-  });
-
-  it('range floor keeps a quiet trace LOW', () => {
-    expect(classifyLevel(1020, 1000, 1020, 0)).toBe('HIGH'); // no floor: noise reads HIGH
-    expect(classifyLevel(1020, 1000, 1020, 150)).toBe('LOW');
-    expect(classifyLevel(1060, 1000, 1100, 150)).toBe('MED'); // 60/150 = 0.4
-  });
-
-  it('empty window gives null; flat window with zero floor gives LOW', () => {
-    expect(classifyLevel(1, null, null, 150)).toBeNull();
-    expect(classifyLevel(5, 5, 5, 0)).toBe('LOW');
   });
 });

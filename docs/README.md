@@ -2,18 +2,23 @@
 
 Project documentation that does not belong in code:
 
-- [sensors.md](sensors.md) — Figaro NGM2611 / LPM2610 calibration and behaviour
-  notes (why absolute ppm is off the table, the humidity confounder, field cautions).
-- [schematic.md](schematic.md) — the carrier-board connection spec (rev A): every
-  component, pin and net, the two power rails, the divider sub-circuit and the BOM.
-  This is the source of truth the KiCad schematic is captured from.
+- [phone_board.md](phone_board.md) — the design spec for the current board
+  (rev B / C): why each part is there, power, the gas sensor circuit, the pin
+  map, the Bluetooth protocol and the CSV the app writes. This is the source of
+  truth for the schematic generator, the firmware and the app.
+- [sensors.md](sensors.md) — Figaro TGS2611 / TGS2610 behaviour notes: why
+  absolute ppm is only indicative, the humidity confounder, warm-up, field
+  cautions.
 
-Still to come:
+Elsewhere:
 
-- PCB layout exports (Gerbers) once rev A is routed
-- Calibration notes: field-test results once the carrier board is built
-- Survey methodology notes relevant to data provenance
+- [../hardware/phone_board/README.md](../hardware/phone_board/README.md) —
+  building the rev C board: the generator scripts, ordering, first power-up.
+- [../hardware/enclosure/README.md](../hardware/enclosure/README.md) — the
+  printed case.
+- [../app/README.md](../app/README.md) — the phone app.
+- [../legacy/rev_a/schematic.md](../legacy/rev_a/schematic.md) — the connection
+  spec for the retired rev A carrier board.
 
-The KiCad project lives in [../hardware/carrier_board/](../hardware/carrier_board/).
 The hardware design will be released under CERN-OHL-S when it is ready; the
 firmware is MIT (see the top-level LICENSE).

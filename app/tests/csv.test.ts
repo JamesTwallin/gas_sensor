@@ -9,7 +9,7 @@ const SPEC_HEADER =
   'ch4_rs_ohm,lpg_rs_ohm,vbat_mv,gps_accuracy_m,ch4_ppm_est,lpg_ppm_est,' +
   'ch4_slope_mv_s,lpg_slope_mv_s,spike';
 
-// rev A header, from src/main.cpp, which must remain a prefix.
+// rev A header, from legacy/rev_a/src/main.cpp, which must remain a prefix.
 const REV_A_HEADER =
   'millis_since_boot,state,ch4_vout_mv,ch4_baseline_mv,ch4_dev_mv,' +
   'lpg_vout_mv,lpg_baseline_mv,lpg_dev_mv,' +

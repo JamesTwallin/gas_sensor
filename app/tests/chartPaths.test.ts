@@ -6,8 +6,8 @@ import {
   RANGE_PAD,
   MIN_SPAN_MS,
   buildLiveChart,
-  buildOverviewChart,
   buildSlopeChart,
+  buildSlopeOverview,
   dataRange,
   fitSpan,
   gridLabel,
@@ -18,19 +18,11 @@ import {
 
 const layout: ChartLayout = { width: 330, height: 150, ...DEFAULT_LAYOUT };
 
-function series(
-  n: number,
-  stepMs: number,
-  value: (i: number) => number,
-  baseline: number | null = 100,
-  lpgBaseline: number | null = 50,
-): ChartPoint[] {
+function series(n: number, stepMs: number, value: (i: number) => number): ChartPoint[] {
   return Array.from({ length: n }, (_, i) => ({
     t: i * stepMs,
     ch4: value(i),
     lpg: value(i) / 2,
-    baseline,
-    lpgBaseline,
   }));
 }
 
@@ -84,8 +76,8 @@ describe('grid', () => {
 });
 
 describe('buildLiveChart', () => {
-  it('scales each channel to its own data, ignoring the baseline', () => {
-    // ch4 3000 (baseline 100 is not drawn and must not widen the range); lpg 1500.
+  it('scales each channel to its own data', () => {
+    // ch4 3000; lpg 1500.
     const pts = series(10, 250, () => 3000);
     const ch4 = buildLiveChart(pts, 2250, 60_000, layout, 150, 'ch4');
     expect(ch4.yMin).toBeGreaterThan(2800);
@@ -110,7 +102,7 @@ describe('buildLiveChart', () => {
   });
 
   it('uses the range floor for a flat trace', () => {
-    const flat = buildLiveChart(series(10, 250, () => 3000, null), 2250, 60_000, layout, 200, 'ch4');
+    const flat = buildLiveChart(series(10, 250, () => 3000), 2250, 60_000, layout, 200, 'ch4');
     expect(flat.yMax - flat.yMin).toBeCloseTo(200 * (1 + 2 * RANGE_PAD), 6);
   });
 
@@ -146,34 +138,38 @@ describe('buildLiveChart', () => {
   });
 });
 
-describe('buildOverviewChart', () => {
-  it('scales to the channel range in the window, ignoring the baseline', () => {
-    const pts = series(50, 1000, () => 500, 250, 60);
-    const ch4 = buildOverviewChart(pts, 49_000, 600_000, layout, 150, 'ch4');
-    expect(ch4.yMin).toBeGreaterThan(250);
-    expect(ch4.yMax).toBeGreaterThan(500);
-    const lpg = buildOverviewChart(pts, 49_000, 600_000, layout, 150, 'lpg');
-    expect(lpg.yMin).toBeGreaterThan(60);
-    expect(lpg.yMax).toBeGreaterThan(250);
-  });
+describe('buildSlopeOverview', () => {
+  const sloped = (n: number, slope: (i: number) => number | null): ChartPoint[] =>
+    series(n, 1000, () => 500).map((p, i) => ({ ...p, ch4Slope: slope(i), ch4Spike: (slope(i) ?? 0) > 150 }));
 
   it('fits the window to the data: 49 s of samples fill the width and label as such', () => {
-    const c = buildOverviewChart(series(50, 1000, () => 500), 49_000, 600_000, layout);
+    const c = buildSlopeOverview(sloped(50, () => 2), 49_000, 600_000, layout);
     expect(c.leftLabel).toBe('−49 s');
+    expect(c.rightLabel).toBe('now');
     const xs = [...c.lines[0].matchAll(/[ML](\S+) /g)].map((m) => parseFloat(m[1]));
     expect(Math.min(...xs)).toBeLessThan(layout.padL + 4);
     expect(Math.max(...xs)).toBeGreaterThan(layout.width - 4);
-    expect(buildOverviewChart(series(700, 1000, () => 500), 699_000, 600_000, layout).leftLabel).toBe('−10 min');
+    expect(buildSlopeOverview(sloped(700, () => 2), 699_000, 600_000, layout).leftLabel).toBe('−10 min');
   });
 
-  it('keeps a brief plume via peak-per-column decimation', () => {
-    const pts = series(600, 1000, (i) => (i === 300 ? 4000 : 500));
-    const c = buildOverviewChart(pts, 599_000, 600_000, layout);
+  it('keeps a one-sample plume edge via peak-per-column decimation, and marks it once', () => {
+    const c = buildSlopeOverview(sloped(600, (i) => (i === 300 ? 800 : -3)), 599_000, 600_000, layout, 'ch4', 150);
+    expect(c.yMax).toBeGreaterThan(800);
     const ys = [...c.lines.join(' ').matchAll(/[ML]\S+ (\S+)/g)].map((m) => parseFloat(m[1]));
-    // The plume must reach near the top of the plot, not be averaged away.
-    expect(Math.min(...ys)).toBeLessThan(layout.padT + 40);
+    // The edge must reach near the top of the plot, not be averaged away.
+    expect(Math.min(...ys)).toBeLessThan(layout.padT + 30);
+    expect(c.spikeMarks).toHaveLength(1);
+    expect(c.thresholdY!).toBeLessThan(c.zeroY);
   });
 
+  it('breaks the line where there are no slopes, and draws nothing without any', () => {
+    // 200 s of data, 100 s without a slope (heaters off), 200 s more.
+    const c = buildSlopeOverview(sloped(500, (i) => (i >= 200 && i < 300 ? null : 2)), 499_000, 600_000, layout);
+    expect(c.lines).toHaveLength(2);
+    const none = buildSlopeOverview(series(50, 1000, () => 500), 49_000, 600_000, layout);
+    expect(none.lines).toEqual([]);
+    expect(none.spikeMarks).toEqual([]);
+  });
 });
 
 describe('spike overlay and derivative panel', () => {
@@ -213,12 +209,5 @@ describe('spike overlay and derivative panel', () => {
     expect(flat.lines).toEqual([]);
     expect(flat.spikeMarks).toEqual([]);
     expect(flat.yMax - flat.yMin).toBeGreaterThan(20);
-  });
-
-  it('overview shows one tick per column with a flagged sample', () => {
-    const c = buildOverviewChart(withSpikes(), 40 * 250, 60_000, layout);
-    expect(c.spikeTicks.length).toBeGreaterThanOrEqual(1);
-    expect(c.spikeTicks.length).toBeLessThanOrEqual(2);
-    expect(buildOverviewChart(series(10, 250, () => 500), 2500, 60_000, layout).spikeTicks).toEqual([]);
   });
 });

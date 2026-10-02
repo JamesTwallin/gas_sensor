@@ -10,7 +10,7 @@ import {
   Inter_800ExtraBold,
   useFonts,
 } from '@expo-google-fonts/inter';
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -21,6 +21,7 @@ import { batteryPercent } from './src/core/simulator';
 import { loadSettings } from './src/services/settingsStore';
 import { DevicePicker } from './src/ui/DevicePicker';
 import { LiveScreen } from './src/ui/LiveScreen';
+import { PresentScreen } from './src/ui/PresentScreen';
 import { SettingsScreen } from './src/ui/SettingsScreen';
 import { SurveysScreen } from './src/ui/SurveysScreen';
 import { Btn, LinkChip, MetaChip, SegmentedTabs, StatusStrip, Toast, type IconName } from './src/ui/components';
@@ -74,6 +75,14 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
 
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const [view, setView] = useState<ViewName>('live');
+  // Presentation mode (ui/PresentScreen.tsx) replaces everything below the status bar.
+  const [presenting, setPresenting] = useState(false);
+  const stopPresenting = useCallback(() => setPresenting(false), []);
+  // Toasts stay out of the video: dropped as they arrive, so none is left to pop up on exit.
+  const toastId = state.toast?.id;
+  useEffect(() => {
+    if (presenting && toastId !== undefined) controller.dismissToast(toastId);
+  }, [presenting, toastId, controller]);
   const light = state.settings.lightTheme;
   const theme = themeFor(light);
 
@@ -147,7 +156,10 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
     <ThemeProvider theme={light ? lightTheme : darkTheme}>
       <SafeAreaProvider>
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg }} edges={['top', 'bottom']}>
-          <StatusBar style={light ? 'dark' : 'light'} />
+          <StatusBar style={light ? 'dark' : 'light'} hidden={presenting} />
+          {presenting ? (
+            <PresentScreen state={state} controller={controller} theme={theme} onExit={stopPresenting} />
+          ) : (
           <Box flex={1} width="100%" maxWidth={720} alignSelf="center" paddingHorizontal="l">
             {/* Header: one fixed-height row. The link chip ellipsises; the chips never wrap. */}
             <Box flexDirection="row" alignItems="center" gap="xs" height={56}>
@@ -206,14 +218,7 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
                   onPress={() => controller.toggleConnection()}
                   style={{ flex: 1.2 }}
                 />
-                <Btn
-                  theme={theme}
-                  big
-                  title="Re-zero"
-                  disabled={!state.linked || state.lastOut?.state === 'HEATER_OFF'}
-                  onPress={() => controller.requestRezero()}
-                  style={{ flex: 1 }}
-                />
+                <Btn theme={theme} big title="Present" onPress={() => setPresenting(true)} style={{ flex: 1 }} />
                 <Btn
                   theme={theme}
                   big
@@ -227,9 +232,10 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
               <SegmentedTabs theme={theme} items={TABS} value={view} onChange={setView} />
             </Box>
           </Box>
+          )}
 
           <DevicePicker state={state} controller={controller} theme={theme} />
-          {state.toast && (
+          {state.toast && !presenting && (
             <Toast theme={theme} text={state.toast.text} id={state.toast.id} onDone={(id) => controller.dismissToast(id)} />
           )}
         </SafeAreaView>

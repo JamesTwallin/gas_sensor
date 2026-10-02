@@ -1,184 +1,117 @@
 # Atmospheric methane detector
 
-A handheld, GPS-tagged instrument for detecting atmospheric methane on walking
-surveys. Two Figaro metal-oxide sensors, a GNSS receiver and a BME280 log a
-geotagged CSV to a microSD card; Python tools turn that log into maps and videos.
-The longer-term aim is fossil-vs-biogenic source discrimination from the two
-channels. This is a citizen-science build, not a product — the firmware logs
-exactly what the hardware reported, uncorrected.
+A handheld instrument for finding methane on walking surveys. A small board
+carries two Figaro metal-oxide gas sensors and streams raw readings over
+Bluetooth to a phone app; the phone supplies the screen, the GPS position and
+the storage, and logs a geotagged CSV. Python tools turn those logs into maps
+and videos. The longer-term aim is to tell fossil from biogenic sources using
+the two sensor channels.
+
+This is a citizen-science build, not a product. It finds plumes; it does not
+measure concentration.
 
 <p align="center">
-  <img src="docs/images/prototype-board.png" alt="The assembled prototype: ESP32-S3-Zero, two Figaro modules, GNSS, BME280 and microSD on the carrier board" height="340">
-  <img src="docs/images/prototype-enclosure.png" alt="The prototype in its hand-held enclosure, OLED visible through the front cut-out" height="340">
+  <img src="hardware/phone_board/preview/render_top.png" alt="Render of the rev C board: ESP32-S3 module on the left, the two Figaro sensor positions on the right edge" height="300">
+  <img src="hardware/enclosure/build/v2_assembly.png" alt="Render of the two-part printed enclosure with the board and battery inside" height="300">
 </p>
 
-<p align="center"><em>The rev-A prototype — the carrier board (left) and the same build in its hand-held enclosure (right).</em></p>
+## Which version to use
 
-## Status
-
-The firmware is working: it reads both gas channels, the OLED, the GNSS and the
-BME280, runs a rolling-percentile baseline and a HIGH/MED/LOW classifier, drives
-the onboard RGB status LED, and logs one geotagged row per sample to microSD (and
-serial). The BOOT button re-zeros the baseline. NVS storage and a dedicated mark
-button are not done yet. The full design notes are in the header comment of
-[src/main.cpp](src/main.cpp).
-
-**Board revisions** (this README and the pin map below describe rev A):
+**Rev C is the current design.** Build that one, with the firmware in
+[firmware/phone_board](firmware/phone_board/) and the phone app in [app](app/).
 
 | Rev | Where | What | State |
 |---|---|---|---|
-| A | [hardware/carrier_board](hardware/carrier_board/) | ESP32-S3-Zero + sensor modules on a carrier, OLED, GNSS, microSD | prototype in use |
-| B | commit `c1cf8df` | bare ESP32-S3-MINI-1, bare Figaro sensors, BLE to the phone app, 66 × 36 mm | built, bring-up passed 2026-09-28 |
-| C | [hardware/phone_board](hardware/phone_board/) | rev B compacted to 60 × 33 mm, same circuit | generated, not ordered |
-| D | [hardware/phone_board_mems](hardware/phone_board_mems/) | rev C with Winsen GM-402B MEMS sensors and a 2.8 V LDO, 55 × 31 mm | draft |
+| **C** | [hardware/phone_board](hardware/phone_board/) | 60 × 33 mm board: bare ESP32-S3 module, two bare Figaro sensors, LiPo charging, BLE to the phone app | **current design**; this layout has not been fabricated yet |
+| B | git tag [`rev-b`](https://github.com/JamesTwallin/gas_sensor/tree/rev-b/hardware/phone_board) | the same circuit on a 66 × 36 mm board | built and bench-tested 2026-09-28; superseded by rev C |
+| D | [hardware/phone_board_mems](hardware/phone_board_mems/) | rev C with cheaper Winsen MEMS sensors, 55 × 31 mm | draft, nothing built |
+| A | [legacy/rev_a](legacy/rev_a/) | first prototype: dev board and sensor modules on a carrier, with its own OLED, GNSS and microSD | retired |
 
-Rev B–D electrical spec and BLE protocol: [docs/phone_board.md](docs/phone_board.md).
-Firmware for them: [firmware/phone_board](firmware/phone_board/); phone app: [app](app/).
+Rev C keeps rev B's schematic, parts and pin map and only shrinks and rearranges
+the board, so the rev B test results, the firmware and the app apply to it
+unchanged. What has been proven on real hardware so far is rev B: USB flashing,
+both gas channels, the temperature/humidity sensor, the heater rail and the
+Bluetooth link to the app. Battery operation and the low-battery cutoff have not
+been exercised yet.
 
-**Known limitation:** the DFRobot GNSS library (I2C mode) gives satellite count,
-position, altitude and UTC, but **not** HDOP or fix type, so the firmware derives
-a coarse FIX / NO-FIX from satellite count and plausible coordinates. Real fix
-quality would need the module's UART NMEA stream.
+## How it works
 
-## Hardware
+- **The board** only samples. Every 250 ms it sends the two sensor voltages,
+  temperature, humidity, battery voltage and status flags as one Bluetooth
+  notification. Electrical design, pin map and the Bluetooth protocol are in
+  [docs/phone_board.md](docs/phone_board.md).
+- **The app** watches the slope of each sensor's voltage. These sensors drift
+  with temperature, humidity and airflow, so the absolute level means little;
+  walking into a plume shows up as a sharp rise, and the app flags it. It also
+  records the survey CSV with the phone's GPS position on every row. See
+  [app/README.md](app/README.md).
+- **The tools** render the CSVs: a satellite map coloured by reading, and a
+  scrolling video of the survey.
 
-Target board: **Waveshare ESP32-S3-Zero** (ESP32-S3FH4R2 — 4 MB flash, 2 MB
-PSRAM, native USB). It has no official PlatformIO definition, so the build uses
-`esp32-s3-devkitc-1` with flash pinned to 4 MB.
+Sensor behaviour, and why absolute ppm is only indicative, is covered in
+[docs/sensors.md](docs/sensors.md).
 
-| Peripheral | Part | Interface | Power |
-|---|---|---|---|
-| OLED display | SSD1306 128x64 | I2C (0x3C) | 3V3 |
-| Methane sensor | Figaro NGM2611-E13 | analog VOUT → ADC | 5V |
-| LP-gas sensor | Figaro LPM2610-D09 | analog VOUT → ADC | 5V |
-| GNSS | DFRobot Gravity (Quectel L76K) | I2C (0x20) | 3V3 |
-| Environment | Bosch BME280 | I2C (0x76) | 3V3 |
-| microSD card | Fermion microSD module | SPI | 3V3 |
-| Status LED | onboard WS2812 RGB | onboard GPIO | onboard |
-| Re-zero button | onboard BOOT | onboard GPIO | — |
+## Getting started
 
-### Pin map
+1. **Board.** Order from the files in
+   [hardware/phone_board/production](hardware/phone_board/production/); the
+   [board README](hardware/phone_board/README.md) covers JLCPCB ordering, the
+   two sensors you solder yourself, battery polarity and first power-up.
+2. **Firmware.** With [PlatformIO](https://platformio.org/) installed, from the
+   repository root:
 
-Every GPIO the firmware uses, from [src/main.cpp](src/main.cpp):
+   ```
+   pio run -d firmware/phone_board                    # build
+   pio run -d firmware/phone_board --target upload    # flash over USB-C
+   ```
 
-| GPIO | Function | Connected to | Notes |
-|---|---|---|---|
-| 0 | BOOT button | onboard BOOT | re-zeros the baseline; also the ROM-bootloader strap |
-| 1 | CH4 analog in (ADC1) | NGM2611 VOUT | via 10k/10k divider; `ADC_11db`, 12-bit |
-| 2 | LPG analog in (ADC1) | LPM2610 VOUT | via 10k/10k divider; `ADC_11db`, 12-bit |
-| 6 | I2C SDA | OLED + GNSS (D/T) + BME280 | shared bus, 100 kHz |
-| 7 | I2C SCL | OLED + GNSS (C/R) + BME280 | shared bus, 100 kHz |
-| 10 | SPI CS | microSD CS | microSD has its own SPI bus |
-| 11 | SPI MOSI | microSD MOSI | |
-| 12 | SPI SCK | microSD SCK | |
-| 13 | SPI MISO | microSD MISO | |
-| 19 / 20 | USB D− / D+ | native USB | serial + flashing — do not reuse |
-| 21 | WS2812 data | onboard RGB LED | board is red-first, so the firmware swaps R/G |
-
-Power: the Figaro modules (and their heaters) run from **5V**; the OLED, GNSS and
-microSD run from **3V3**; common ground throughout. Free GPIOs for expansion:
-4, 5, 8, 9, 14–18.
-
-> **Voltage warning.** Each Figaro VOUT can reach ~4.95 V — above the ESP32-S3's
-> 3.3 V limit — so each VOUT **must** go through a 10k/10k divider (~2.5 V at the
-> factory alarm level). The firmware applies `VOUT_DIVIDER_RATIO = 2.0` to recover
-> the real VOUT and warns on serial if a pin reads near its ceiling, which means a
-> divider is missing or open.
-
-Per-sensor wiring notes (addresses, the GNSS dual-labelled pads, the BME280-vs-BMP280
-check, microSD logging behaviour) are in [docs/schematic.md](docs/schematic.md) and
-the [src/main.cpp](src/main.cpp) header. Humidity matters because it is the main
-uncorrected confounder for these MOX sensors — see [docs/sensors.md](docs/sensors.md).
-
-## Building and flashing
-
-The project uses PlatformIO, which manages the toolchain, board definition and
-pinned libraries — a clone builds identically anywhere, with no manual library
-installs.
-
-1. Install [VS Code](https://code.visualstudio.com/) and the **PlatformIO IDE**
-   extension (the repo recommends it, so VS Code will offer to install it).
-2. Open this folder in VS Code and let PlatformIO finish its first-run setup. The
-   first build downloads the ESP32 toolchain and pinned libraries.
-3. Build: `pio run`
-4. Flash over USB: `pio run --target upload`. If the board isn't found, enter the
-   ROM bootloader by hand: hold **BOOT**, tap **RESET**, release **BOOT**, retry.
-5. Watch output: `pio device monitor` — you'll see the banner, then ~4 CSV rows/s
-   once it reaches RUNNING.
-
-## CSV format
-
-Both the serial stream and the microSD log use one row per sample:
-
-```
-millis_since_boot, state, ch4_vout_mv, ch4_baseline_mv, ch4_dev_mv,
-lpg_vout_mv, lpg_baseline_mv, lpg_dev_mv,
-temp_c, humidity_pct, pressure_hpa,
-utc_iso8601, lat, lon, alt_m, sats, fix
-```
-
-- Per channel: conditioned VOUT (mV), the rolling clean-air baseline, and their
-  difference (`*_dev_mv`, the anomaly). `state` is `WARMUP` / `BASELINING` / `RUNNING`.
-- `temp_c` / `humidity_pct` / `pressure_hpa`: the BME280 reading, blank if none
-  is fitted. `humidity_pct` is the one that matters for rejecting MOX false positives.
-- `utc_iso8601` is `YYYY-MM-DD HH:MM:SS.mmm` (whole second from the GNSS, ms
-  interpolated from the on-board clock); blank until the GNSS has time.
-- `lat` / `lon` / `alt_m` are only meaningful when `fix` is 1, and are blank
-  otherwise so a parser can tell a real 0 from a missing value.
-
-Blank fields throughout mean "not measured", distinct from a real 0.
+   If the board is not found, hold **BOOT**, tap **RESET**, release **BOOT** and
+   retry.
+3. **App.** Build and install the Android or iOS app as described in
+   [app/README.md](app/README.md). It includes a simulated board, so you can
+   try it with no hardware.
+4. **Enclosure (optional).** The printed case is in
+   [hardware/enclosure](hardware/enclosure/). It currently fits the rev B board;
+   a rev C version has not been made yet.
+5. **Survey.** Power the board, connect from the app, tap Record and walk. New
+   sensors need several days powered before their readings settle.
 
 ## Analysis tools
 
-Two scripts under [tools/](tools/) render every `*.csv` in `tools/data/` (no
-arguments needed):
+The scripts in [tools/](tools/) read survey CSVs from `tools/data/`:
 
-- **[tools/plot_survey.py](tools/plot_survey.py)** → `tools/videos/<name>.mp4`: a
-  real-time scrolling chart of combined gas above baseline. ffmpeg comes from the
-  `imageio-ffmpeg` package, so nothing system-wide is needed.
-- **[tools/plot_map.py](tools/plot_map.py)** → `tools/maps/<name>.png`: the GPS
-  track over an Esri satellite basemap (`contextily`, no API key), each point
-  coloured by raw sensor VOUT, so you can see *where* readings spiked. `--combine`
+- **[plot_map.py](tools/plot_map.py)** → `tools/maps/<name>.png`: the GPS track
+  over a satellite basemap, each point coloured by sensor reading. `--combine`
   pools several logs; `--diff` maps the CH4/LPG differential.
+- **[plot_survey.py](tools/plot_survey.py)** → `tools/videos/<name>.mp4`: a
+  real-time scrolling chart of the survey.
+- **[plot_spike.py](tools/plot_spike.py)**: a bench log's ppm estimate and its
+  slope, with spikes flagged.
+- **[serial_bridge.py](tools/serial_bridge.py)**: relays a board plugged into a
+  PC to the app over Wi-Fi, for bench work without Bluetooth.
 
 ```
 pip install -r tools/requirements.txt   # once
-python tools/plot_survey.py
 python tools/plot_map.py
+python tools/plot_survey.py
 ```
 
-Tweakables (FPS, window, basemap, filters) are constants near the top of each script.
+The CSV columns are listed in [docs/phone_board.md](docs/phone_board.md#app-csv-backwards-compatible).
+Survey CSVs contain GPS coordinates, so `tools/data/` is not tracked.
 
 ## Repository layout
 
 ```
-platformio.ini   rev A build configuration, board, flags, pinned libraries
-src/main.cpp     rev A firmware
-firmware/        rev B–D firmware (phone_board/)
-app/             Expo phone app for rev B–D (BLE, GPS, CSV logging)
-docs/            sensors.md, carrier-board spec (schematic.md), phone-board spec (phone_board.md)
-hardware/        KiCad 9 projects: carrier_board (rev A), phone_board (rev C),
-                 phone_board_mems (rev D), enclosure (OpenSCAD case for the phone board)
-tools/           Python analysis (maps + videos), serial bridge; local CSVs in tools/data/
+app/              phone app (Expo / React Native): Bluetooth, slope and spike detection, GPS, CSV recording
+firmware/         board firmware for rev B, C and D (phone_board/, PlatformIO)
+hardware/
+  phone_board/        rev C board: KiCad project, generator scripts, fabrication files
+  phone_board_mems/   rev D draft
+  enclosure/          printed case (OpenSCAD + STLs)
+docs/             board spec and Bluetooth protocol (phone_board.md), sensor notes (sensors.md)
+tools/            Python analysis scripts and the USB serial bridge
+legacy/           rev A prototype and superseded enclosure models, kept for reference
 ```
-
-## Hardware design
-
-The carrier board replaces the breadboard: the ESP32-S3-Zero and every sensor
-plug into 2.54 mm header sockets, and the only soldered parts are the two 10k/10k
-VOUT dividers (R1–R4). [docs/schematic.md](docs/schematic.md) is the connection
-spec (every pin, net and rail).
-
-The KiCad 9 project is in [hardware/carrier_board/](hardware/carrier_board/). It
-uses generic library parts — each module is a header socket, and the ESP32-S3-Zero
-is modelled as its two 9-pin headers (a pair of `Conn_01x09`) rather than a custom
-symbol. The schematic is captured and the two-layer board is **placed and routed**
-(with a ground pour), with [Fabrication Toolkit](https://github.com/bennymeg/Fabrication-Toolkit)
-options set for gerber export. A Waveshare ESP32-S3-Zero symbol is vendored under
-[hardware/carrier_board/lib/](hardware/carrier_board/lib/) (from
-[jtomka/kicad-esp32-s3-zero](https://github.com/jtomka/kicad-esp32-s3-zero)) but
-is not currently used. Treat it as an untested rev-A — routed and ready for fab,
-not yet validated in hardware.
 
 ## Licence
 

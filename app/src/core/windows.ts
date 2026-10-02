@@ -98,26 +98,3 @@ export function percentile(values: readonly number[], p: number): number | null 
   const k = Math.floor(p * (n - 1));
   return nthElement(values.slice(), Math.max(0, Math.min(n - 1, k)));
 }
-
-export type Level = 'LOW' | 'MED' | 'HIGH';
-
-/**
- * The rev A classifier: where `value` sits between the window's min and max, in
- * thirds. The span is floored at rangeFloorMv so a quiet, flat trace reads LOW
- * rather than magnifying noise into a HIGH. Returns null for an empty window.
- */
-export function classifyLevel(
-  value: number,
-  lo: number | null,
-  hi: number | null,
-  rangeFloorMv: number,
-): Level | null {
-  if (lo === null || hi === null) return null;
-  let range = hi - lo;
-  if (range < rangeFloorMv) range = rangeFloorMv;
-  if (!(range > 0)) return 'LOW'; // floor of 0 and a perfectly flat window
-  const frac = (value - lo) / range;
-  if (frac < 0.34) return 'LOW';
-  if (frac < 0.67) return 'MED';
-  return 'HIGH';
-}

@@ -1,5 +1,5 @@
 # scratch renders/exports; the checked-in parts are stl/*.stl
 build/*.stl
 build/*.scad
-# keep the preview render (the repo root ignores *.png)
-!build/assembly.png
+# keep the README's render (the repo root ignores *.png)
+!build/v2_assembly.png

@@ -1,9 +1,13 @@
-# CH4 Survey — companion app (rev B board)
+# CH4 Survey — companion app
 
-Phone app for the rev B methane detector ([docs/phone_board.md](../docs/phone_board.md)).
-The board streams raw samples over BLE; the app does everything rev A did in
-firmware — warm-up / baselining state machine, rolling-percentile baseline,
-HIGH/MED/LOW classifier, charts — plus GPS tagging and CSV recording.
+Phone app for the methane detector's phone-companion board, rev B and rev C
+([docs/phone_board.md](../docs/phone_board.md)).
+The board streams raw samples over BLE; the app turns them into the one thing
+that indicates a plume — the slope of each channel's load voltage, with a spike
+detector on top — charts it, and adds GPS tagging and CSV recording. Rev A's
+HIGH/MED/LOW classifier and its baseline are gone from the screen: the absolute
+level wanders too much to mean anything. The rolling baseline is still computed
+for the rev A CSV columns only, so the plotting tools keep working.
 
 One codebase: **Expo (SDK 57) + React Native + TypeScript**, built with EAS.
 
@@ -13,16 +17,17 @@ app/
   index.ts         Expo entry point
   app.json         Expo config: permissions, BLE + location plugins
   eas.json         EAS Build profiles (development / preview / production)
-  src/core/        pure, DOM-free, unit-tested — unchanged from the web build
+  src/core/        pure, DOM-free, unit-tested
     protocol.ts    BLE UUIDs, 20-byte Sample parser, Info JSON, control opcodes
     base64.ts      base64 <-> bytes (react-native-ble-plx speaks base64)
     sensor.ts      VRL = tap × tap_ratio, Rs = RL (VC − VRL) / VRL
-    windows.ts     time-based rolling window, rev A percentile + classifier
-    processor.ts   WARMUP / RUNNING / HEATER_OFF state machine, LED colour
+    windows.ts     time-based rolling window, rev A percentile
+    spike.ts       slope (dVRL/dt) and the adaptive spike threshold
+    processor.ts   WARMUP / RUNNING / HEATER_OFF state machine, CSV baseline, LED colour
     csv.ts         exact spec column order, row formatting, file names
     chartData.ts   chart history + peak-per-column decimation
     simulator.ts   simulated board producing protocol-exact packets
-    settings.ts    defaults (warm-up 3 min, baseline 2 min, 2 min / p15, 10 min / 150 mV)
+    settings.ts    defaults (no warm-up, 1 s slope window, 4 σ / 25 mV/s spike threshold)
   src/controller.ts  the wiring: BLE/simulator -> core -> UI state, GPS, recording
                      (deliberately not src/app/ — Expo treats that as the
                       Expo Router routes directory)
@@ -31,7 +36,7 @@ app/
   src/ui/
     chartPaths.ts  pure chart geometry (unit-tested)
     charts.tsx     react-native-svg rendering of that geometry
-    *Screen.tsx    Live / Surveys / Settings
+    *Screen.tsx    Live / Surveys / Settings, and Present (full-screen slopes for video)
   tests/           vitest — core + chart geometry
 ```
 
@@ -81,10 +86,10 @@ native projects from scratch if they get into a bad state.
 
 ### Without hardware
 
-**Settings → Simulated device**, then Connect. The simulator has buttons to press
-BOOT, drop the link (tests auto-reconnect), toggle USB and force the heaters off.
-Because it touches no native BLE code it also runs in Expo Go (`npm run start:go`)
-and in the browser (`npm run web`), which is the quickest way to work on the UI.
+**Settings → Simulated device**, then Connect. The simulator has buttons to drop
+the link (tests auto-reconnect), toggle USB and force the heaters off.
+Because it touches no native BLE code it also runs in Expo Go (`npm run start:go`),
+which is the quickest way to work on the UI.
 
 ### Cloud builds (optional)
 
@@ -105,7 +110,7 @@ truth and EAS runs `prebuild` itself.
 ## Tests and type-checking
 
 ```sh
-pnpm test         # vitest: src/core + src/ui/chartPaths — 75 tests
+pnpm test         # vitest: src/core + src/ui/chartPaths — 105 tests
 pnpm typecheck
 ```
 
@@ -125,21 +130,22 @@ Declared in `app.json` and requested at first Connect / Record:
 - **iOS** — `NSBluetoothAlwaysUsageDescription` (from the BLE plugin),
   `NSBluetoothPeripheralUsageDescription` and `NSLocationWhenInUseUsageDescription`.
 
-Unlike the web build, there is no OS device chooser: the app scans for boards
-advertising the service UUID and shows its own picker.
+There is no OS device chooser: the app scans for boards advertising the service
+UUID and shows its own picker.
 
 ## Using it in the field
 
 1. Power the board, tap **Connect**, pick `CH4-XXXX` from the list.
-2. The big card shows **WARMING UP** (timed from the board's power-on; skipped
-   if the board has been on a while), then **LOW / MED / HIGH** with the CH4
-   deviation above baseline. There is no baselining wait: the rolling baseline
-   starts from the first reading and firms up over the next couple of minutes
-   (the card says "settling" meanwhile). Raw readings are charted and recorded
-   in every state. The board LED follows (blue → green / amber / red).
+2. The big card shows the **CH4 slope** in mV/s (after **WARMING UP**, if a
+   warm-up is set) and turns red while the slope is over the spike threshold: a
+   rising edge means you have just walked into a plume. Each channel's card
+   charts the slope over the last 60 s, the raw VRL under it, and the peak slope
+   over the last 10 min. Raw readings are charted and recorded in every state.
+   The board LED follows (green, red while CH4 is spiking).
 3. Tap **● Record** to start a survey. Rows are appended to storage every 3 s.
-   Press the board's BOOT button or **Re-zero** to restart the baseline.
-4. A red **HEATERS OFF** banner means the firmware's low-battery cutoff tripped:
+4. Tap **Present** for presentation mode: just the two slopes, full screen and
+   large, for filming or screen-recording. The ✕ (or Android back) leaves it.
+5. A red **HEATERS OFF** banner means the firmware's low-battery cutoff tripped:
    readings are invalid until the heaters are back and the sensor has warmed up again.
 
 ## Getting CSVs into `tools/data/`

@@ -8,8 +8,8 @@ pull-ups). This document is the source of truth for the schematic — the
 `.kicad_sch` is captured from the nets listed here.
 
 It is derived directly from the firmware pin map in
-[../src/main.cpp](../src/main.cpp) and the hardware table in the
-[../README.md](../README.md). If the firmware pin assignments change, change them
+[src/main.cpp](src/main.cpp) and the hardware table in the
+[README.md](README.md). If the firmware pin assignments change, change them
 here too.
 
 ## Design intent
@@ -197,5 +197,5 @@ Pads are dual-labelled (I2C vs UART); driving I2C selects it.
 4. **Bring out the free GPIOs.** GPIO4, GPIO5, GPIO8, GPIO9, GPIO14–18 are unused —
    route them to a spare header so the throwaway rev can still grow.
 5. **No silicone near the Figaro sensors** — it poisons the element irreversibly
-   (see [sensors.md](sensors.md)). Affects enclosure/adhesive choice, not copper.
+   (see [sensors.md](../../docs/sensors.md)). Affects enclosure/adhesive choice, not copper.
 6. **5V comes from USB only** — see the rail warning above.

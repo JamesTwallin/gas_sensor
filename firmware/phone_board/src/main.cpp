@@ -1,4 +1,5 @@
-// Rev B phone-companion board firmware: a thin BLE sampler.
+// Phone-companion board firmware (rev B and rev C, which share one circuit): a
+// thin BLE sampler.
 //
 // docs/phone_board.md is the source of truth for everything this file
 // implements (pin map, ADS1115 channels, BLE UUIDs, packet layout, Info JSON,

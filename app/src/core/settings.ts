@@ -1,23 +1,18 @@
 // Processing + app settings. Pure: persistence lives in services/.
 
 export interface ProcessingSettings {
-  /** Heater warm-up after device power-on before readings are classified (ms since boot). */
+  /**
+   * Heater warm-up after device power-on (ms since boot). The state card reads
+   * WARMING UP until then; slope and spike detection run regardless.
+   */
   warmupMs: number;
-  /** Rolling background window for the percentile baseline. */
-  bgWindowMs: number;
-  /** Percentile (0–1) of the background window taken as the baseline. */
-  bgPercentile: number;
-  /** HIGH/MED/LOW classification window. */
-  classWindowMs: number;
-  /** Minimum min..max span (mV) before thirds mean anything. */
-  classRangeFloorMv: number;
 }
 
 export interface AppSettings extends ProcessingSettings {
   simulate: boolean;
   /** Requested device sample interval, sent with opcode 0x01 on connect. */
   intervalMs: number;
-  /** Drive the board's status LED from the CH4 class (opcode 0x03). */
+  /** Drive the board's status LED from the run state and CH4 spikes (opcode 0x03). */
   driveLed: boolean;
   /** Keep the screen awake while connected or recording. */
   keepAwake: boolean;
@@ -27,7 +22,7 @@ export interface AppSettings extends ProcessingSettings {
    * Correct the ppm estimate for temperature and humidity using the Figaro
    * datasheet tables (on by default). Off = treat every reading as taken at
    * the datasheet reference conditions, 20 °C / 65 %RH. The raw load
-   * voltages, Rs and the HIGH/MED/LOW classifier are never compensated.
+   * voltages, Rs and the slope are never compensated.
    */
   envCompensate: boolean;
   /** Spike detector (core/spike.ts): derivative window (ms), robust-sigma threshold, floor (mV/s). */
@@ -44,19 +39,8 @@ export interface AppSettings extends ProcessingSettings {
   bridgeHost: string;
 }
 
-/**
- * Field defaults. Rev A shipped a 15 s bench warm-up; a real survey wants
- * minutes -- the Figaro "initial action" alone is minutes. Windows, percentile
- * and range floor are the rev A values. There is no baselining wait: the
- * baseline is provisional from the first sample and firms up as the window fills.
- */
 export const DEFAULT_PROCESSING: ProcessingSettings = {
   warmupMs: 0, // no warm-up gate: everything is plotted and detected from the first sample
-
-  bgWindowMs: 2 * 60_000,
-  bgPercentile: 0.15,
-  classWindowMs: 10 * 60_000,
-  classRangeFloorMv: 150,
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -88,7 +72,6 @@ export function sanitizeSettings(raw: unknown): AppSettings {
       (out[key] as number) = v;
     }
   }
-  out.bgPercentile = Math.min(1, out.bgPercentile);
   // Phones that stored the old 3 min default (before 2026-09-30) get the new no-warm-up default.
   if (out.warmupMs === 3 * 60_000) out.warmupMs = 0;
   return out;

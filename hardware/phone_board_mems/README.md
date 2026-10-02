@@ -110,5 +110,5 @@ the enclosure press on it, and keep conformal coating off it.
   printed manual before ordering.
 - **ME6211 pinout** (1 VIN, 2 GND, 3 CE, 4 NC, 5 VOUT) is taken from LCSC's
   symbol, which matches the AP2112K order. Verify against the datasheet.
-- **Enclosure.** `hardware/enclosure` targets rev C; nothing has been adapted
-  for this outline.
+- **Enclosure.** `hardware/enclosure` fits the rev B board; nothing has been
+  adapted for this outline.

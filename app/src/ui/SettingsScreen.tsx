@@ -32,17 +32,19 @@ const FIELDS: Field[] = [
   { key: 'bridgeHost', label: 'Bridge PC address', hint: 'Blank = the PC running Expo' },
   { key: 'lightTheme', label: 'Light theme', hint: 'Easier to read in direct sun' },
   { key: 'keepAwake', label: 'Keep screen awake', hint: 'While connected or recording' },
-  { key: 'driveLed', label: 'Drive board LED', hint: 'Green / amber / red from CH4 class' },
+  { key: 'driveLed', label: 'Drive board LED', hint: 'Green when running, red while the CH4 slope is over the spike threshold' },
   {
     key: 'envCompensate',
     label: 'Temperature / humidity correction',
     hint: 'Correct the ppm estimate with the Figaro datasheet tables from the SHT40 reading. Off = assume 20 °C / 65 %RH',
   },
-  { key: 'warmupMs', label: 'Warm-up (min)', hint: '0 = none (default). Only the LOW/MED/HIGH class waits for it', scale: 60_000, min: 0 },
-  { key: 'bgWindowMs', label: 'Baseline window (min)', scale: 60_000, min: 0.5 },
-  { key: 'bgPercentile', label: 'Baseline percentile', hint: '15 = 15th percentile', scale: 0.01, min: 1, max: 50 },
-  { key: 'classWindowMs', label: 'Class window (min)', hint: 'HIGH/MED/LOW range', scale: 60_000, min: 1, max: 60 },
-  { key: 'classRangeFloorMv', label: 'Class range floor (mV)', min: 0 },
+  {
+    key: 'warmupMs',
+    label: 'Warm-up (min)',
+    hint: '0 = none (default). The card reads WARMING UP for this long after power-on; charts and spikes run regardless',
+    scale: 60_000,
+    min: 0,
+  },
   { key: 'intervalMs', label: 'Sample interval (ms)', hint: '100–5000, sent to the board', min: 100, max: 5000 },
   { key: 'spikeWindowMs', label: 'Spike window (s)', hint: 'Slope is measured over this', scale: 1000, min: 0.25, max: 10 },
   { key: 'spikeSigma', label: 'Spike sensitivity (σ)', hint: 'Lower = more sensitive; robust sigmas of recent slope noise', min: 1, max: 20 },
@@ -248,7 +250,6 @@ export function SettingsScreen({
         <Box>
           <H3>Simulator</H3>
           <Box flexDirection="row" gap="s" flexWrap="wrap" marginVertical="s">
-            <Btn theme={theme} title="Press BOOT" onPress={() => controller.simPressButton()} />
             <Btn theme={theme} title="Drop link" onPress={() => controller.simDropLink()} />
             <Btn theme={theme} title="Toggle USB" onPress={() => controller.simToggleUsb()} />
             <Btn theme={theme} title="Toggle heaters" onPress={() => controller.simToggleHeaters()} />

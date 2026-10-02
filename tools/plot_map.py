@@ -26,7 +26,8 @@ served via contextily, and the tiles are cached locally under your contextily
 cache dir -- so only the first render of a given area needs the network;
 re-renders of the same patch are offline.
 
-The CSV is the one written by src/main.cpp, columns:
+The CSV is the one written by the phone app (and by the rev A firmware,
+legacy/rev_a/src/main.cpp); the columns the script needs are:
   millis_since_boot,state,ch4_vout_mv,ch4_baseline_mv,ch4_dev_mv,
   lpg_vout_mv,lpg_baseline_mv,lpg_dev_mv,temp_c,humidity_pct,pressure_hpa,
   utc_iso8601,lat,lon,alt_m,sats,fix
@@ -370,10 +371,12 @@ def load_track(path):
     gps = gps.dropna(subset=["lat", "lon"])
     gps = gps[(gps["lat"] != 0) | (gps["lon"] != 0)]
 
-    # Require a decent satellite count -- weak fixes are the noisy ones.
+    # Require a decent satellite count -- weak fixes are the noisy ones. The
+    # phone app leaves sats blank (phones don't expose it) and puts its accuracy
+    # check into fix, so a blank passes.
     if "sats" in gps.columns:
         before = len(gps)
-        gps = gps[gps["sats"] >= MIN_SATS]
+        gps = gps[gps["sats"].isna() | (gps["sats"] >= MIN_SATS)]
         dropped = before - len(gps)
         if dropped:
             print(f"  dropped {dropped} row(s) with < {MIN_SATS} sats")

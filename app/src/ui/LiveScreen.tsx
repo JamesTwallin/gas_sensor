@@ -3,15 +3,15 @@
 import { TGS2610, TGS2611, fmtPpm } from '../core/ppm';
 import { batteryPercent } from '../core/simulator';
 import type { AppController, UiState } from '../controller';
-import { LIVE_SPAN_MS } from '../controller';
-import { LiveChart, OverviewChart, SlopeChart } from './charts';
+import { LIVE_SPAN_MS, OVERVIEW_SPAN_MS } from '../controller';
+import { LiveChart, SlopeChart, SlopeOverviewChart } from './charts';
 import { Card, Legend, Tile } from './components';
 import { fmtDuration, signed } from './format';
 import { Box, Text } from './restyle';
 import type { Theme } from './theme';
 
-const CHART_HEIGHT = 124;
-const SLOPE_HEIGHT = 72;
+const SLOPE_HEIGHT = 132;
+const VRL_HEIGHT = 96;
 const OVERVIEW_HEIGHT = 76;
 
 const kohm = (r: number | null): [string, string] =>
@@ -26,7 +26,7 @@ interface CardLook {
   fg: string;
   fgMuted: string;
   border: string;
-  /** The LOW/MED/HIGH word is the loudest thing on screen; the others are calmer. */
+  /** The slope figure is the loudest thing on screen; the other states are calmer. */
   big: boolean;
   progress: number | null;
 }
@@ -68,25 +68,20 @@ function cardLook(state: UiState, theme: Theme): CardLook {
       progress: Math.min(1, out.stateElapsedMs / Math.max(1, out.stateDurationMs)),
     };
   }
-  // RUNNING from the first sample: the baseline is provisional while the
-  // background window is still short, and the eyebrow says so.
-  const settling = out.baselineAgeMs < 30_000;
-  const level = out.ch4.level ?? 'LOW';
-  const skin =
-    level === 'HIGH'
-      ? { bg: theme.critical, fg: theme.onDark, fgMuted: 'rgba(255,255,255,0.8)' }
-      : level === 'MED'
-        ? { bg: theme.warning, fg: theme.onLight, fgMuted: 'rgba(16,17,20,0.7)' }
-        : { bg: theme.good, fg: theme.onDark, fgMuted: 'rgba(255,255,255,0.8)' };
+  // RUNNING: the CH4 slope is the reading. The card stays neutral and turns red
+  // while the slope is over the spike threshold (held for SPIKE_HOLD_MS).
+  const { ch4, lpg, active } = state.spikes;
+  const skin = active.ch4
+    ? { bg: theme.critical, fg: theme.onDark, fgMuted: 'rgba(255,255,255,0.8)', border: theme.critical }
+    : {};
   return {
+    ...quiet,
     ...skin,
-    border: skin.bg,
     big: true,
-    progress: null,
-    eyebrow: settling ? `CH4 above baseline · settling ${Math.round(out.baselineAgeMs / 1000)} s` : 'CH4 above baseline',
-    word: out.ch4.level ?? '—',
-    sub: `${signed(out.ch4.devMv)} mV`,
-    lpg: `LPG ${out.lpg.level ?? '—'} · ${signed(out.lpg.devMv)} mV`,
+    eyebrow: active.ch4 ? 'CH4 slope · spike' : 'CH4 slope',
+    word: ch4.slopeMvPerS === null ? '—' : signed(ch4.slopeMvPerS),
+    sub: ch4.thresholdMvPerS === null ? 'mV/s' : `mV/s · threshold ${Math.round(ch4.thresholdMvPerS)}`,
+    lpg: `LPG ${lpg.slopeMvPerS === null ? '—' : signed(lpg.slopeMvPerS)} mV/s${active.lpg ? ' · spike' : ''}`,
   };
 }
 
@@ -103,7 +98,6 @@ export function LiveScreen({
   const out = state.lastOut;
   const s = state.lastSample;
   const now = controller.chartNow();
-  const floor = state.settings.classRangeFloorMv;
 
   const num = (v: number | null | undefined, digits: number) =>
     v === null || v === undefined ? '—' : v.toFixed(digits);
@@ -112,7 +106,7 @@ export function LiveScreen({
 
   return (
     <Box gap="m">
-      {/* Fixed height whatever the state, so WARMUP -> BASELINING -> LOW never moves the charts. */}
+      {/* Fixed height whatever the state, so WARMUP -> RUNNING never moves the charts. */}
       <Box
         height={172}
         justifyContent="center"
@@ -149,8 +143,9 @@ export function LiveScreen({
         </Box>
       </Box>
 
-      {/* One card per channel: they sit at different voltages and respond with
-          different slopes, so each gets its own axis, live trace and peak strip. */}
+      {/* One card per channel: they respond with different slopes, so each gets
+          its own axes. Slope first (it is the reading), the VRL trace under it
+          for context, then the peak slope over the longer window. */}
       {(
         [
           ['ch4', 'Methane', 'CH4'],
@@ -160,26 +155,17 @@ export function LiveScreen({
         <Card
           key={series}
           theme={theme}
-          title={`${name} · last 60 s`}
+          title={`${name} slope · mV/s`}
           right={
             <Legend
               items={[
-                [`${short} VRL`, theme[series]],
                 ['slope', theme.slope],
                 ['spike', theme.critical],
+                [`${short} VRL`, theme[series]],
               ]}
             />
           }
         >
-          <LiveChart
-            points={controller.livePoints()}
-            now={now}
-            spanMs={LIVE_SPAN_MS}
-            height={CHART_HEIGHT}
-            rangeFloorMv={floor}
-            series={series}
-            theme={theme}
-          />
           <SlopeChart
             points={controller.livePoints()}
             now={now}
@@ -190,16 +176,27 @@ export function LiveScreen({
             thresholdMvPerS={state.spikes[series].thresholdMvPerS}
           />
           <Text variant="tileKey" paddingTop="xs">
-            {`Peak · last ${Math.round(state.settings.classWindowMs / 60000)} min`}
+            {`${short} VRL`}
           </Text>
-          <OverviewChart
-            points={controller.overviewPoints()}
+          <LiveChart
+            points={controller.livePoints()}
             now={now}
-            spanMs={state.settings.classWindowMs}
-            height={OVERVIEW_HEIGHT}
-            rangeFloorMv={floor}
+            spanMs={LIVE_SPAN_MS}
+            height={VRL_HEIGHT}
             series={series}
             theme={theme}
+          />
+          <Text variant="tileKey" paddingTop="xs">
+            {`Peak slope · last ${Math.round(OVERVIEW_SPAN_MS / 60000)} min`}
+          </Text>
+          <SlopeOverviewChart
+            points={controller.overviewPoints()}
+            now={now}
+            spanMs={OVERVIEW_SPAN_MS}
+            height={OVERVIEW_HEIGHT}
+            series={series}
+            theme={theme}
+            thresholdMvPerS={state.spikes[series].thresholdMvPerS}
           />
         </Card>
       ))}
@@ -227,13 +224,13 @@ export function LiveScreen({
           <Tile
             theme={theme}
             label={state.spikes.ch4.spike ? 'CH4 slope · SPIKE' : 'CH4 slope'}
-            value={state.spikes.ch4.slopeMvPerS === null ? '—' : signed(Math.round(state.spikes.ch4.slopeMvPerS))}
+            value={state.spikes.ch4.slopeMvPerS === null ? '—' : signed(state.spikes.ch4.slopeMvPerS)}
             unit="mV/s"
           />
           <Tile
             theme={theme}
             label={state.spikes.lpg.spike ? 'LPG slope · SPIKE' : 'LPG slope'}
-            value={state.spikes.lpg.slopeMvPerS === null ? '—' : signed(Math.round(state.spikes.lpg.slopeMvPerS))}
+            value={state.spikes.lpg.slopeMvPerS === null ? '—' : signed(state.spikes.lpg.slopeMvPerS)}
             unit="mV/s"
           />
           <Tile

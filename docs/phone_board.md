@@ -1,7 +1,10 @@
-# Phone-companion board (rev B) — design spec
+# Phone-companion board (rev B / C) — design spec
 
-> Rev C (`hardware/phone_board`) is rev B compacted to 60 × 33 mm with the same
-> schematic, parts and pin map; everything electrical below applies unchanged.
+> **Rev C (`hardware/phone_board`) is the current design.** It is rev B
+> compacted from 66 × 36 to 60 × 33 mm with the same schematic, parts and pin
+> map, so everything electrical below applies to both. Rev B is the layout that
+> was fabricated and bench-tested (git tag `rev-b`); where this document says
+> "rev B" it means the circuit the two share.
 > Rev D (`hardware/phone_board_mems`, draft) swaps the Figaro cans for Winsen
 > GM-402B MEMS sensors on a 2.8 V LDO heater rail; its README lists what that
 > changes in the sensor loop, the heater monitor and the firmware constants.
@@ -9,7 +12,7 @@
 Rev B moves everything a phone already does onto the phone. The board keeps only
 what a phone cannot do: the gas sensors, the environment sensor, and a radio.
 
-| Job | rev A (carrier) | rev B (this) |
+| Job | rev A (carrier, retired) | rev B / C (this) |
 |---|---|---|
 | MCU | ESP32-S3-Zero dev board on headers | **bare ESP32-S3-MINI-1 module**, soldered |
 | Methane | NGM2611-E13 module (alarm + compensation) | **bare TGS2611-E00**, own load circuit |
@@ -19,13 +22,15 @@ what a phone cannot do: the gas sensors, the environment sensor, and a radio.
 | Position / time | L76K GNSS | **phone** |
 | Display | SSD1306 OLED | **phone** |
 | Storage | microSD | **phone** (CSV export) |
-| Baseline + classifier | firmware | **phone** |
+| Signal processing | firmware (baseline + classifier) | **phone** (slope + spike detector) |
 | Power | USB only | **1-cell LiPo** + USB-C charging |
 | Link | USB serial | **BLE** (USB CDC kept for debug/flash) |
 
-The firmware becomes a thin sampler: read, average, notify over BLE. All the
-signal processing that used to live in `src/main.cpp` (percentile baseline,
-HIGH/MED/LOW classifier, charts) moves to the app, where it is easier to tune.
+The firmware becomes a thin sampler: read, average, notify over BLE. The signal
+processing moves to the app, where it is easier to tune. The app does not carry
+over rev A's HIGH/MED/LOW classifier or show its percentile baseline: the
+absolute level wanders too much. It monitors the slope of each channel instead
+(see the CSV section below).
 
 This file is the source of truth for the schematic generator, the firmware and
 the app. Change it first.
@@ -114,7 +119,7 @@ PGA ±4.096 V (125 µV/LSB). ALERT/RDY → GPIO10.
 
 | GPIO | Net | Notes |
 |---|---|---|
-| 0 | BOOT | tact switch to GND; also the app "re-zero"/mark button |
+| 0 | BOOT | tact switch to GND; reported to the app as flag bit5 (unused there for now) |
 | 1 | CH4_ADC_FB | fallback read of CH4 tap via R22 1k (ADC1) — R22 not fitted by default |
 | 2 | LPG_ADC_FB | fallback read of LPG tap via R25 1k (ADC1) — R25 not fitted by default |
 | 5 | CHG_N | BQ24073 CHG, open-drain, 10k pull-up to 3V3 |
@@ -168,10 +173,11 @@ rail, 0 when the ADS1115 is absent.)
 |---|---|---|
 | 0x01 | u16 interval_ms (100–5000) | set sample interval |
 | 0x02 | — | blink LED (identify) |
-| 0x03 | u8 r, u8 g, u8 b | set status LED (the app drives LOW/MED/HIGH colour) |
+| 0x03 | u8 r, u8 g, u8 b | set status LED (the app drives green, red while CH4 is spiking) |
 
 A BOOT-button press is sent as a sample with no extra field: the firmware sets
-flag **bit5** on the next sample, and the app treats it as re-zero / mark.
+flag **bit5** on the next sample. The app currently ignores it (it used to
+re-zero the baseline).
 
 ## App CSV (backwards compatible)
 
@@ -186,6 +192,9 @@ ch4_rs_ohm,lpg_rs_ohm,vbat_mv,gps_accuracy_m,ch4_ppm_est,lpg_ppm_est,
 ch4_slope_mv_s,lpg_slope_mv_s,spike
 ```
 
+- `*_baseline_mv` / `*_dev_mv` are kept only so the plotting tools keep
+  working: the rev A 15th percentile of the last 2 min, fixed. The app neither
+  shows nor acts on them.
 - `ch4_slope_mv_s` / `lpg_slope_mv_s` are the first derivative of VRL over the
   app's spike window (default 1 s), and `spike` is `CH4`, `LPG`, `CH4+LPG` or
   blank: the app's plume indicator (`app/src/core/spike.ts`, the same maths as
@@ -204,10 +213,8 @@ ch4_slope_mv_s,lpg_slope_mv_s,spike
   clock when the sample arrived. `lat`/`lon`/`alt_m`/`gps_accuracy_m` are the
   latest phone fix; `fix` is also 0 if that fix is more than 10 s old.
 - `state` can also be `HEATER_OFF` (flag bit6). The tools only keep `RUNNING`.
-- **Known gap:** `tools/plot_map.py` drops rows with `sats < MIN_SATS`, and a
-  blank `sats` parses as NaN, so it currently drops *every* rev B row. That
-  filter must treat a blank `sats` as passing (rely on `fix` /
-  `gps_accuracy_m` instead) before rev B logs will map.
+- `tools/plot_map.py` applies its minimum-satellite filter only to rows that
+  have a `sats` value (rev A logs); phone rows rely on `fix`.
 
 ## Bench: USB bridge for Expo Go
 

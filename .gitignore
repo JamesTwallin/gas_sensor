@@ -6,7 +6,7 @@
 .vscode/*
 !.vscode/extensions.json
 
-# Local Claude Code agent state (settings, memory) -- never publish
+# Local tool state (settings, memory) -- never publish
 .claude/
 
 # OS cruft
@@ -15,9 +15,11 @@ Thumbs.db
 *.mp4
 *.png
 
-# ...but keep the README screenshots (the *.png rule above is for generated maps/plots)
-!docs/images/
-!docs/images/*.png
+# ...but keep the rev A photos (the *.png rule above is for generated maps/plots).
+# Board renders, the enclosure render and the app icons are re-included by the
+# .gitignore next to them.
+!legacy/rev_a/images/
+!legacy/rev_a/images/*.png
 
 # Python bytecode cache (from the tools/ scripts)
 __pycache__/
@@ -39,7 +41,7 @@ _autosave-*
 *-bak
 *.bak
 ~*.lck
-hardware/carrier_board/#auto_saved_files#
-hardware/carrier_board/production/*
+legacy/rev_a/carrier_board/#auto_saved_files#
+legacy/rev_a/carrier_board/production/*
 
 tools/bench/*
