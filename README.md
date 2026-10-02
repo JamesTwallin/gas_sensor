@@ -67,9 +67,17 @@ Sensor behaviour, and why absolute ppm is only indicative, is covered in
 
    If the board is not found, hold **BOOT**, tap **RESET**, release **BOOT** and
    retry.
-3. **App.** Build and install the Android or iOS app as described in
-   [app/README.md](app/README.md). It includes a simulated board, so you can
-   try it with no hardware.
+3. **App.** On Android, scan the code below (or use the
+   [direct link](https://expo.dev/artifacts/eas/GfUwoBCFfugQeaA97EXnztzByZKVXR2_-AvwwxxLo4k.apk))
+   to download the preview build of 2026-10-02 as an APK; the phone will ask you
+   to allow installing from an unknown source. To build it yourself, or for iOS,
+   see [app/README.md](app/README.md). The app includes a simulated board, so
+   you can try it with no hardware.
+
+   <img src="docs/images/android-app-qr.png" alt="QR code linking to the Android APK of the CH4 Survey app" width="220">
+
+   The download is hosted by Expo and is removed after their retention period;
+   if the code no longer works, build the app from source.
 4. **Enclosure (optional).** The printed case is in
    [hardware/enclosure](hardware/enclosure/). It currently fits the rev B board;
    a rev C version has not been made yet.
