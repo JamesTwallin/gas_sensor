@@ -1,124 +1,150 @@
 # Atmospheric methane detector
 
-A handheld instrument for finding methane on walking surveys. A small board
-carries two Figaro metal-oxide gas sensors and streams raw readings over
-Bluetooth to a phone app; the phone supplies the screen, the GPS position and
-the storage, and logs a geotagged CSV. Python tools turn those logs into maps
-and videos. The longer-term aim is to tell fossil from biogenic sources using
-the two sensor channels.
+A pocket-sized gas detector you carry on a walk to find methane leaks.
 
-This is a citizen-science build, not a product. It finds plumes; it does not
-measure concentration.
+- A small circuit board holds two gas sensors, one for methane and one for LP
+  gas (propane and butane).
+- The board sends its readings to an app on your phone over Bluetooth.
+- The app shows you when the gas level suddenly rises, and saves the readings
+  together with your GPS position.
+- Afterwards, scripts in this repository turn a recording into a map.
+
+This is a home-built, citizen-science project. It is not a certified safety
+device. It shows *where* gas rises; it does not tell you how much gas there is.
 
 <p align="center">
-  <img src="hardware/phone_board/preview/render_top.png" alt="Render of the rev C board: ESP32-S3 module on the left, the two Figaro sensor positions on the right edge" height="300">
-  <img src="hardware/enclosure/build/v2_assembly.png" alt="Render of the two-part printed enclosure with the board and battery inside" height="300">
+  <img src="hardware/phone_board/preview/render_top.png" alt="Picture of the circuit board. The two round sensor positions are on the right-hand edge." height="300">
+  <img src="hardware/enclosure/build/v2_assembly.png" alt="Picture of the 3D-printed case with the board and battery inside." height="300">
 </p>
 
-## Which version to use
+## Which version to build
 
-**Rev C is the current design.** Build that one, with the firmware in
-[firmware/phone_board](firmware/phone_board/) and the phone app in [app](app/).
+**Build rev C.** It is the current design.
 
-| Rev | Where | What | State |
-|---|---|---|---|
-| **C** | [hardware/phone_board](hardware/phone_board/) | 60 × 33 mm board: bare ESP32-S3 module, two bare Figaro sensors, LiPo charging, BLE to the phone app | **current design**; this layout has not been fabricated yet |
-| B | git tag [`rev-b`](https://github.com/JamesTwallin/gas_sensor/tree/rev-b/hardware/phone_board) | the same circuit on a 66 × 36 mm board | built and bench-tested 2026-09-28; superseded by rev C |
-| D | [hardware/phone_board_mems](hardware/phone_board_mems/) | rev C with cheaper Winsen MEMS sensors, 55 × 31 mm | draft, nothing built |
-| A | [legacy/rev_a](legacy/rev_a/) | first prototype: dev board and sensor modules on a carrier, with its own OLED, GNSS and microSD | retired |
+| Version | What it is | Status |
+|---|---|---|
+| **Rev C** | The current board, 60 × 33 mm. Files are in [hardware/phone_board](hardware/phone_board/). | **Build this one.** This exact board has not been manufactured yet. |
+| Rev B | The same circuit on a slightly bigger board (66 × 36 mm). | Built and tested in September 2026. Replaced by rev C. Its files are saved under the git tag [`rev-b`](https://github.com/JamesTwallin/gas_sensor/tree/rev-b/hardware/phone_board). |
+| Rev D | An experiment with cheaper sensors. In [hardware/phone_board_mems](hardware/phone_board_mems/). | A draft. Nothing has been built. |
+| Rev A | The first prototype, which had its own screen, GPS and memory card. In [legacy/rev_a](legacy/rev_a/). | Retired. |
 
-Rev C keeps rev B's schematic, parts and pin map and only shrinks and rearranges
-the board, so the rev B test results, the firmware and the app apply to it
-unchanged. What has been proven on real hardware so far is rev B: USB flashing,
-both gas channels, the temperature/humidity sensor, the heater rail and the
-Bluetooth link to the app. Battery operation and the low-battery cutoff have not
-been exercised yet.
+Rev C and rev B are the same circuit. Rev C is just smaller, with the parts
+moved around. So the software and the app work on both, and the tests done on
+rev B still count. Running from the battery has not been properly tested yet.
 
-## How it works
+## What you need
 
-- **The board** only samples. Every 250 ms it sends the two sensor voltages,
-  temperature, humidity, battery voltage and status flags as one Bluetooth
-  notification. Electrical design, pin map and the Bluetooth protocol are in
-  [docs/phone_board.md](docs/phone_board.md).
-- **The app** watches the slope of each sensor's voltage. These sensors drift
-  with temperature, humidity and airflow, so the absolute level means little;
-  walking into a plume shows up as a sharp rise, and the app flags it. It also
-  records the survey CSV with the phone's GPS position on every row. See
-  [app/README.md](app/README.md).
-- **The tools** render the CSVs: a satellite map coloured by reading, and a
-  scrolling video of the survey.
+| Item | Where to get it | Notes |
+|---|---|---|
+| The circuit board | Order from [JLCPCB](https://jlcpcb.com/) using the files in [hardware/phone_board/production](hardware/phone_board/production/). | It arrives with almost every part already soldered on. The [board guide](hardware/phone_board/README.md) lists which options to pick when ordering. |
+| Methane sensor: Figaro **TGS2611-E00** | [RS Components, stock no. 134-6647](https://uk.rs-online.com/web/p/environmental-sensor-ics/1346647) | You solder this on yourself. It has four legs. |
+| LP-gas sensor: Figaro **TGS2610-D00** | RS Components, stock no. 134-6641 (search for it on your country's RS site) | You solder this on yourself too. |
+| Battery | [The Pi Hut: 2000mAh 3.7V LiPo Battery, JST-PH connector](https://thepihut.com/products/2000mah-3-7v-lipo-battery), about £10 | **Check the red and black wires before plugging it in**, see below. Any single-cell 3.7 V LiPo battery works if it has a JST-PH plug and built-in protection. |
+| USB-C cable | Any | For charging the battery and loading the software. |
+| Android phone | | For the app. An iPhone works only if you build the app yourself. |
+| Case (optional) | 3D-print it from [hardware/enclosure](hardware/enclosure/) | Also needs four M2 × 8 mm and two M2 × 5 mm self-tapping screws. The case fits the rev B board; one for rev C has not been made yet. |
 
-Sensor behaviour, and why absolute ppm is only indicative, is covered in
-[docs/sensors.md](docs/sensors.md).
+The two sensors together cost roughly $25–30. Not every electronics shop stocks
+them, so use the part names above when searching.
 
-## Getting started
+**Battery wires.** Batteries with the same plug are not all wired the same way
+round. The battery from The Pi Hut came with red and black swapped compared to
+what this board expects, and the two metal pins had to be swapped over in the
+plug. A battery plugged in the wrong way round does no damage, but the board
+will not switch on. The [board guide](hardware/phone_board/README.md#before-you-power-it)
+shows which side is positive.
 
-1. **Board.** Order from the files in
-   [hardware/phone_board/production](hardware/phone_board/production/); the
-   [board README](hardware/phone_board/README.md) covers JLCPCB ordering, the
-   two sensors you solder yourself, battery polarity and first power-up.
-2. **Firmware.** With [PlatformIO](https://platformio.org/) installed, from the
-   repository root:
+## Putting it together
+
+1. **Order the board** from JLCPCB.
+2. **Solder on the two sensors.** Line up the small tab on each sensor with the
+   notch printed on the board.
+3. **Load the software onto the board.** Install
+   [PlatformIO](https://platformio.org/), plug the board into your computer with
+   the USB-C cable, switch the board on, and run these from this folder:
 
    ```
    pio run -d firmware/phone_board                    # build
-   pio run -d firmware/phone_board --target upload    # flash over USB-C
+   pio run -d firmware/phone_board --target upload    # load it onto the board
    ```
 
-   If the board is not found, hold **BOOT**, tap **RESET**, release **BOOT** and
-   retry.
-3. **App.** On Android, scan the code below (or use the
-   [direct link](https://expo.dev/artifacts/eas/GfUwoBCFfugQeaA97EXnztzByZKVXR2_-AvwwxxLo4k.apk))
-   to download the preview build of 2026-10-02 as an APK; the phone will ask you
-   to allow installing from an unknown source. To build it yourself, or for iOS,
-   see [app/README.md](app/README.md). The app includes a simulated board, so
-   you can try it with no hardware.
+   If your computer cannot find the board: hold the **BOOT** button, tap
+   **RESET**, let go of **BOOT**, and try again.
+4. **Install the app.** On an Android phone, scan this code, or open the
+   [direct link](https://expo.dev/artifacts/eas/GfUwoBCFfugQeaA97EXnztzByZKVXR2_-AvwwxxLo4k.apk)
+   on the phone. Your phone will ask for permission to install it.
 
-   <img src="docs/images/android-app-qr.png" alt="QR code linking to the Android APK of the CH4 Survey app" width="220">
+   <img src="docs/images/android-app-qr.png" alt="QR code that downloads the Android app" width="220">
 
-   The download is hosted by Expo and is removed after their retention period;
-   if the code no longer works, build the app from source.
-4. **Enclosure (optional).** The printed case is in
-   [hardware/enclosure](hardware/enclosure/). It currently fits the rev B board;
-   a rev C version has not been made yet.
-5. **Survey.** Power the board, connect from the app, tap Record and walk. New
-   sensors need several days powered before their readings settle.
+   This is the version built on 2 October 2026. The download is stored by Expo
+   and will be removed after a while. If the code has stopped working, or you
+   have an iPhone, build the app yourself: see the [app guide](app/README.md).
+   The app has a pretend sensor built in, so you can try it before you have a
+   board.
+5. **Plug in the battery**, after checking the wires (above). Plugging in the
+   USB-C cable charges it.
+6. **Leave it switched on for about a week**, plugged into a USB charger,
+   before trusting it. New sensors need 4 to 7 days of running before their
+   readings settle down.
+7. **Go for a walk.** Switch the board on, open the app, tap **Connect**, pick
+   your board from the list, and tap **Record**.
 
-## Analysis tools
+A quick way to check it works: let a little gas out of an unlit cigarette
+lighter near the sensors, for a second or two only. The LP-gas reading should
+jump. The methane reading will not, because that sensor has a filter that blocks
+lighter gas.
 
-The scripts in [tools/](tools/) read survey CSVs from `tools/data/`:
+## How it finds gas
 
-- **[plot_map.py](tools/plot_map.py)** → `tools/maps/<name>.png`: the GPS track
-  over a satellite basemap, each point coloured by sensor reading. `--combine`
-  pools several logs; `--diff` maps the CH4/LPG differential.
-- **[plot_survey.py](tools/plot_survey.py)** → `tools/videos/<name>.mp4`: a
-  real-time scrolling chart of the survey.
-- **[plot_spike.py](tools/plot_spike.py)**: a bench log's ppm estimate and its
-  slope, with spikes flagged.
-- **[serial_bridge.py](tools/serial_bridge.py)**: relays a board plugged into a
-  PC to the app over Wi-Fi, for bench work without Bluetooth.
+The sensors do not give a steady number. Their readings drift up and down with
+the temperature, the humidity and the wind, even in clean air. So the app does
+not look at how high the reading is. It looks at how fast the reading is
+*changing*. Walking into a patch of gas makes the reading shoot up within a
+second or two, and the app flags that moment.
+
+For the same reason, the gas concentration the app shows (in parts per million)
+is only a rough guide.
+
+More detail, for those who want it:
+
+- [docs/phone_board.md](docs/phone_board.md): how the board is designed and
+  how it talks to the phone.
+- [docs/sensors.md](docs/sensors.md): how the sensors behave, and what can
+  fool them.
+- [app/README.md](app/README.md): the app.
+
+## Making a map from a recording
+
+The app saves each walk as a spreadsheet-style file (a CSV). Share it from the
+app's **Surveys** tab to your computer and put it in the `tools/data/` folder.
+Then, with [Python](https://www.python.org/) installed:
 
 ```
 pip install -r tools/requirements.txt   # once
-python tools/plot_map.py
-python tools/plot_survey.py
+python tools/plot_map.py                # makes a map for every recording
+python tools/plot_survey.py             # makes a video for every recording
 ```
 
-The CSV columns are listed in [docs/phone_board.md](docs/phone_board.md#app-csv-backwards-compatible).
-Survey CSVs contain GPS coordinates, so `tools/data/` is not tracked.
+- [plot_map.py](tools/plot_map.py) draws your route on a satellite photo,
+  coloured by the sensor reading. The maps appear in `tools/maps/`.
+- [plot_survey.py](tools/plot_survey.py) makes a video of the readings over
+  time. The videos appear in `tools/videos/`.
 
-## Repository layout
+Recordings contain your GPS positions, so `tools/data/` is never uploaded to
+GitHub.
+
+## What is in this repository
 
 ```
-app/              phone app (Expo / React Native): Bluetooth, slope and spike detection, GPS, CSV recording
-firmware/         board firmware for rev B, C and D (phone_board/, PlatformIO)
+app/              the phone app
+firmware/         the software that runs on the board
 hardware/
-  phone_board/        rev C board: KiCad project, generator scripts, fabrication files
-  phone_board_mems/   rev D draft
-  enclosure/          printed case (OpenSCAD + STLs)
-docs/             board spec and Bluetooth protocol (phone_board.md), sensor notes (sensors.md)
-tools/            Python analysis scripts and the USB serial bridge
-legacy/           rev A prototype and superseded enclosure models, kept for reference
+  phone_board/        the rev C board: design files and the files to order it
+  phone_board_mems/   the rev D draft
+  enclosure/          the 3D-printed case
+docs/             how the board and the sensors work
+tools/            scripts that turn recordings into maps and videos
+legacy/           old versions, kept for reference
 ```
 
 ## Licence

@@ -111,8 +111,9 @@ don't regenerate over those edits.
      fee.
 3. **Solder these yourself:**
    - **Figaro TGS2611-E00 (S1, CH4) and TGS2610-D00 (S2, LPG).** Neither is
-     stocked at LCSC; buy from Digi-Key or Mouser. They are through-hole, so
-     line the tab up with the silkscreen notch.
+     stocked at LCSC. RS Components lists both (stock numbers 134-6647 and
+     134-6641). They are through-hole, so line the tab up with the silkscreen
+     notch.
    - **Figaro recommends a long burn-in before the readings settle**: 7 days
      (TGS2611) / 4–7 days (TGS2610) with the heater on.
 
