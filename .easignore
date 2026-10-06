@@ -25,6 +25,7 @@
 /app/dist/
 /app/web-build/
 /app/coverage/
+/app/store/
 /app/credentials.json
 *.jks
 .DS_Store

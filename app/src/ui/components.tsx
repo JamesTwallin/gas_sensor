@@ -3,7 +3,7 @@
 // prop is the colour palette (callers that also paint SVG already hold it).
 
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useEffect, type ComponentProps } from 'react';
+import { useEffect, useRef, type ComponentProps } from 'react';
 import { Pressable, type StyleProp, type ViewStyle } from 'react-native';
 import type { LinkStatus } from '../services/device';
 import { Box, Text, borderRadii, sizes, spacing } from './restyle';
@@ -304,10 +304,15 @@ export function Toast({
   id: number;
   onDone: (id: number) => void;
 }) {
+  // The parent re-renders at the sample rate and passes a fresh onDone each
+  // time; keying the timer on it restarted the 3.5 s countdown on every sample,
+  // so a toast never cleared while a sensor was streaming.
+  const done = useRef(onDone);
+  done.current = onDone;
   useEffect(() => {
-    const t = setTimeout(() => onDone(id), 3500);
+    const t = setTimeout(() => done.current(id), 3500);
     return () => clearTimeout(t);
-  }, [id, onDone]);
+  }, [id]);
   return (
     <Box pointerEvents="none" position="absolute" left={0} right={0} bottom={spacing.xxl * 4} alignItems="center">
       <Box paddingHorizontal="l" paddingVertical="m" borderRadius="pill" maxWidth="90%" style={{ backgroundColor: theme.text }}>
