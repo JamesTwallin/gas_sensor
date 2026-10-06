@@ -1,13 +1,17 @@
 // Recorded CSVs: share one to get it onto a computer, or delete it.
 
 import { useCallback, useEffect, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Modal } from 'react-native';
 import type { AppController, UiState } from '../controller';
+import type { HeatMode } from '../core/heatmap';
 import type { SurveyFile } from '../services/recorder';
 import { Btn, H2, Hint } from './components';
 import { fmtSize, fmtWhen } from './format';
+import { SurveyMap } from './SurveyMap';
 import { Box, Text } from './restyle';
 import type { Theme } from './theme';
+
+const MAP_HEIGHT = 380;
 
 export function SurveysScreen({
   state,
@@ -19,9 +23,18 @@ export function SurveysScreen({
   theme: Theme;
 }) {
   const [files, setFiles] = useState<SurveyFile[] | null>(null);
+  const points = controller.trackPoints();
+  const [heatMode, setHeatMode] = useState<HeatMode>('spikes');
+  const [fullMap, setFullMap] = useState(false);
+  const trackLen = points.length;
 
   const refresh = useCallback(async () => {
     setFiles(await controller.listSurveys());
+  }, [controller]);
+
+  // The map wants a position even before anything is connected.
+  useEffect(() => {
+    controller.startGps();
   }, [controller]);
 
   // Re-read after every flush, so the size of the file being recorded moves.
@@ -57,8 +70,45 @@ export function SurveysScreen({
 
   return (
     <Box>
+      <H2>Survey map</H2>
+      <Hint>
+        {state.recording
+          ? 'Live heatmap of this recording. Switch between the raw reading and spikes, and tap a square to read it.'
+          : trackLen
+            ? 'The last recording. Tap Record to start a new trace.'
+            : 'Tap Record and the route you walk is drawn here as you go.'}
+      </Hint>
+      <Box marginTop="s" marginBottom="l">
+        <SurveyMap
+          state={state}
+          points={points}
+          theme={theme}
+          height={MAP_HEIGHT}
+          mode={heatMode}
+          onModeChange={setHeatMode}
+          onToggleFullscreen={() => setFullMap(true)}
+        />
+        <Modal
+          visible={fullMap}
+          animationType="fade"
+          statusBarTranslucent
+          navigationBarTranslucent
+          onRequestClose={() => setFullMap(false)}
+        >
+          <SurveyMap
+            state={state}
+            points={points}
+            theme={theme}
+            height={MAP_HEIGHT}
+            mode={heatMode}
+            onModeChange={setHeatMode}
+            fullscreen
+            onToggleFullscreen={() => setFullMap(false)}
+          />
+        </Modal>
+      </Box>
       <H2>Surveys</H2>
-      <Hint>Stored in app storage. Share a CSV to your computer and drop it in tools/data/.</Hint>
+      <Hint>Stored in app storage. Share a CSV</Hint>
       {files === null && <Hint>Loading…</Hint>}
       {files !== null && files.length === 0 && <Hint>No surveys yet. Connect, then tap Record.</Hint>}
       <Box gap="s" marginTop="s">

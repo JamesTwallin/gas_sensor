@@ -29,6 +29,9 @@ app/
     simulator.ts   simulated board producing protocol-exact packets
     beep.ts        the alarm tone (synthesised WAV)
     settings.ts    defaults (3 min warm-up, 1 s slope window, 25 mV/s spike threshold, beep on)
+    mapView.ts     map maths: Web Mercator, which tiles to show, fit-to-track (unit-tested)
+    track.ts       the survey track: one point per GPS fix with its readings (unit-tested)
+    heatmap.ts     ground cells, colour scale and range for the map (unit-tested)
   src/controller.ts  the wiring: BLE/simulator -> core -> UI state, GPS, recording
                      (deliberately not src/app/ — Expo treats that as the
                       Expo Router routes directory)
@@ -37,6 +40,7 @@ app/
   src/ui/
     chartPaths.ts  pure chart geometry (unit-tested)
     charts.tsx     react-native-svg rendering of that geometry
+    SurveyMap.tsx  the live survey map: satellite tiles + the heatmap
     *Screen.tsx    Live / Surveys / Settings, and Present (full-screen slopes for video)
   tests/           vitest — core + chart geometry
 ```
@@ -147,6 +151,18 @@ UUID and shows its own picker.
    recorded in every state. The board LED follows (green, red while CH4 is
    spiking).
 3. Tap **● Record** to start a survey. Rows are appended to storage every 3 s.
+   The **Surveys** tab draws your route as a heatmap on a satellite map as
+   you walk, like `tools/plot_map.py` does afterwards. The route is split into
+   5 m squares (bigger when zoomed out), each coloured on one gradient from
+   dark purple (low) to pale yellow (high), with a colour bar showing the range.
+   **Raw** colours each square by the average CH4 VRL there; **Spikes** by the
+   steepest CH4 rise there in mV/s, scaled from 0 to the top 1% of squares.
+   Tap a square to read its value; tap again to close it. The map fits the
+   whole route until you drag or pinch it; the GPS button centres on you and
+   follows you as you walk. The top button opens the map full screen; it or
+   the back gesture closes it.
+   Fixes less accurate than 25 m are left off, so indoors the route may not
+   appear. The map images come from Esri World Imagery and need a data connection.
 4. Tap **Present** for presentation mode: just the two slopes, full screen and
    large, for filming or screen-recording. The ✕ (or Android back) leaves it.
 5. A red **HEATERS OFF** banner means the firmware's low-battery cutoff tripped:

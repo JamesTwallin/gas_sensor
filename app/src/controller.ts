@@ -44,6 +44,7 @@ import { setKeepAwake } from './services/keepAwake';
 import { Recorder, type SurveyFile } from './services/recorder';
 import { saveSettings } from './services/settingsStore';
 import { SimDeviceLink } from './services/simDevice';
+import { TrackBuffer, type TrackPoint } from './core/track';
 
 export const LIVE_SPAN_MS = 60_000;
 /** History kept for the peak-slope overview strip. */
@@ -104,6 +105,8 @@ export interface UiState {
   toast: Toast | null;
   /** Bumped whenever chart data changes, so chart views re-pull points. */
   chartTick: number;
+  /** Bumped whenever the survey track gains a point or is cleared (map view). */
+  trackTick: number;
 }
 
 const IDLE_SPIKES: UiState['spikes'] = {
@@ -122,6 +125,8 @@ export class AppController {
   private chart: ChartBuffer;
   private recorder: Recorder;
   private gps: GpsService;
+  /** The recording's GPS track for the survey map: one point per fix. */
+  private track = new TrackBuffer();
   private link: DeviceLink | null = null;
   private scan: ScanHandle | null = null;
   private lastSeq: number | null = null;
@@ -141,7 +146,13 @@ export class AppController {
     this.chart = new ChartBuffer(OVERVIEW_SPAN_MS);
     this.recorder = new Recorder(() => this.syncRecorder());
     this.gps = new GpsService((fix, status, detail) => {
-      this.patch({ gpsFix: fix, gpsStatus: status, gpsDetail: detail ?? '' });
+      const grew = !!fix && this.recorder.recording && this.track.addFix(fix);
+      this.patch({
+        gpsFix: fix,
+        gpsStatus: status,
+        gpsDetail: detail ?? '',
+        ...(grew ? { trackTick: this.state.trackTick + 1 } : {}),
+      });
     });
     this.state = {
       settings,
@@ -173,6 +184,7 @@ export class AppController {
       scanError: null,
       toast: null,
       chartTick: 0,
+      trackTick: 0,
     };
   }
 
@@ -453,6 +465,8 @@ export class AppController {
     });
 
     if (this.recorder.recording) {
+      // The survey map's heatmap: mean CH4 VRL and steepest CH4 rise per fix.
+      this.track.addSample(ch4Mv, sp.ch4.slopeMvPerS, sp.ch4.spike || sp.lpg.spike);
       this.recorder.add(
         formatCsvRow({
           millisSinceBoot: s.msSinceBoot,
@@ -566,6 +580,9 @@ export class AppController {
       } else {
         void this.gps.start();
         const name = await this.recorder.start();
+        // A new survey starts a new trace; the last one stays on the map until then.
+        this.track.clear();
+        this.patch({ trackTick: this.state.trackTick + 1 });
         this.toast(`Recording to ${name}`);
         if (!this.link) this.toast('Recording — connect a sensor to log rows');
       }
@@ -573,6 +590,16 @@ export class AppController {
       this.toast(`Recording failed: ${e instanceof Error ? e.message : String(e)}`);
     }
     await this.updateKeepAwake();
+  }
+
+  /** Turn GPS on (the survey map asks when it is shown). Idempotent. */
+  startGps(): void {
+    void this.gps.start();
+  }
+
+  /** The current (or last) recording's track, for the survey map. */
+  trackPoints(): readonly TrackPoint[] {
+    return this.track.points();
   }
 
   listSurveys(): Promise<SurveyFile[]> {
