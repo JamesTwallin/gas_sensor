@@ -1,7 +1,7 @@
 // The per-channel charts, drawn with react-native-svg. All the geometry is in
 // ui/chartPaths.ts (pure); this file is only paint: the first derivative as a
-// line on its own axis with zero and the spike threshold ruled and spikes
-// marked, and the VRL trace as a 2 px line over a gradient wash with hairline
+// line on its own axis with zero and the spike threshold ruled, red and heavier
+// where it is over the threshold, and the VRL trace as a 2 px line over a gradient wash with hairline
 // grid and an end marker ringed in the surface colour.
 
 import { useState } from 'react';
@@ -29,13 +29,14 @@ interface SlopeSizes {
   pad: Pick<ChartLayout, 'padL' | 'padT' | 'padB'>;
   font: number;
   line: number;
+  /** The over-threshold stretches of the trace. */
+  hotLine: number;
   rule: number;
-  mark: number;
 }
 
-const SLOPE_NORMAL: SlopeSizes = { pad: DEFAULT_LAYOUT, font: AXIS_FONT, line: 1.5, rule: 1, mark: 3.5 };
+const SLOPE_NORMAL: SlopeSizes = { pad: DEFAULT_LAYOUT, font: AXIS_FONT, line: 1.5, hotLine: 3.5, rule: 1 };
 /** Presentation mode: everything a camera has to read is drawn larger. */
-const SLOPE_BIG: SlopeSizes = { pad: { padL: 72, padT: 12, padB: 30 }, font: 18, line: 3.5, rule: 2, mark: 7 };
+const SLOPE_BIG: SlopeSizes = { pad: { padL: 72, padT: 12, padB: 30 }, font: 18, line: 3.5, hotLine: 7, rule: 2 };
 
 interface FrameProps {
   frame: ChartFrame;
@@ -130,16 +131,13 @@ export function LiveChart({ points, now, spanMs, height, series, theme }: ChartP
         {c.lines.map((d, i) => (
           <Path key={`l${i}`} d={d} stroke={colour} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" fill="none" />
         ))}
-        {c.spikeMarks.map((m, i) => (
-          <Circle key={`k${i}`} cx={m.x} cy={m.y} r={4} fill={theme.critical} stroke={theme.surface} strokeWidth={1.5} />
-        ))}
         <EndMarker at={c.end} colour={colour} surface={theme.surface} />
       </Svg>
     </View>
   );
 }
 
-/** Paint for both slope charts: zero ruled solid, the threshold dashed in red, flagged samples marked. */
+/** Paint for both slope charts: zero ruled solid, the threshold dashed in red, the trace red and heavier above it. */
 function SlopePlot({ c, layout, theme, k }: { c: SlopeGeometry; layout: ChartLayout; theme: Theme; k: SlopeSizes }) {
   const yLabel = (y: number, text: string) => (
     <SvgText x={layout.padL - 8} y={y + k.font / 3} fill={theme.textFaint} fontSize={k.font} fontFamily={FONT.medium} textAnchor="end">
@@ -176,8 +174,8 @@ function SlopePlot({ c, layout, theme, k }: { c: SlopeGeometry; layout: ChartLay
       {c.lines.map((d, i) => (
         <Path key={`s${i}`} d={d} stroke={theme.slope} strokeWidth={k.line} strokeLinejoin="round" strokeLinecap="round" fill="none" />
       ))}
-      {c.spikeMarks.map((m, i) => (
-        <Circle key={`k${i}`} cx={m.x} cy={m.y} r={k.mark} fill={theme.critical} stroke={theme.surface} strokeWidth={1.5} />
+      {c.hotLines.map((d, i) => (
+        <Path key={`h${i}`} d={d} stroke={theme.critical} strokeWidth={k.hotLine} strokeLinejoin="round" strokeLinecap="round" fill="none" />
       ))}
       {caption(layout.padL, c.leftLabel, 'start')}
       {caption(layout.width - 1, c.rightLabel, 'end')}

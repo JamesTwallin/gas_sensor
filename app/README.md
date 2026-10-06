@@ -1,4 +1,4 @@
-# CH4 Survey — companion app
+# GasSnifferBuddy — companion app
 
 Phone app for the methane detector's phone-companion board, rev B and rev C
 ([docs/phone_board.md](../docs/phone_board.md)).
@@ -27,12 +27,13 @@ app/
     csv.ts         exact spec column order, row formatting, file names
     chartData.ts   chart history + peak-per-column decimation
     simulator.ts   simulated board producing protocol-exact packets
-    settings.ts    defaults (no warm-up, 1 s slope window, 4 σ / 25 mV/s spike threshold)
+    beep.ts        the alarm tone (synthesised WAV)
+    settings.ts    defaults (3 min warm-up, 1 s slope window, 25 mV/s spike threshold, beep on)
   src/controller.ts  the wiring: BLE/simulator -> core -> UI state, GPS, recording
                      (deliberately not src/app/ — Expo treats that as the
                       Expo Router routes directory)
   src/services/    BLE scan + link (auto-reconnect), simulated link, GPS,
-                   recorder, keep-awake, settings storage
+                   recorder, keep-awake, spike beeper (expo-audio), settings storage
   src/ui/
     chartPaths.ts  pure chart geometry (unit-tested)
     charts.tsx     react-native-svg rendering of that geometry
@@ -110,7 +111,7 @@ truth and EAS runs `prebuild` itself.
 ## Tests and type-checking
 
 ```sh
-pnpm test         # vitest: src/core + src/ui/chartPaths — 105 tests
+pnpm test         # vitest: src/core + src/ui/chartPaths — 107 tests
 pnpm typecheck
 ```
 
@@ -136,12 +137,15 @@ UUID and shows its own picker.
 ## Using it in the field
 
 1. Power the board, tap **Connect**, pick `CH4-XXXX` from the list.
-2. The big card shows the **CH4 slope** in mV/s (after **WARMING UP**, if a
-   warm-up is set) and turns red while the slope is over the spike threshold: a
-   rising edge means you have just walked into a plume. Each channel's card
-   charts the slope over the last 60 s, the raw VRL under it, and the peak slope
-   over the last 10 min. Raw readings are charted and recorded in every state.
-   The board LED follows (green, red while CH4 is spiking).
+2. The big card reads **WARMING UP** for the first 3 minutes after the board
+   powers on (skipped if it has been on longer), then shows the **CH4 slope** in
+   mV/s and turns red while the slope is over the spike threshold: a rising
+   edge means you have just walked into a plume. The phone sounds an alarm
+   tone on every flagged sample (Settings → Beep on spikes). No spikes are flagged during warm-up, though the charts run. Each
+   channel's card charts the slope over the last 60 s, the raw VRL under it,
+   and the peak slope over the last 10 min. Raw readings are charted and
+   recorded in every state. The board LED follows (green, red while CH4 is
+   spiking).
 3. Tap **● Record** to start a survey. Rows are appended to storage every 3 s.
 4. Tap **Present** for presentation mode: just the two slopes, full screen and
    large, for filming or screen-recording. The ✕ (or Android back) leaves it.
@@ -154,12 +158,12 @@ UUID and shows its own picker.
 (Drive, email, Nearby Share / AirDrop, …) and save it to `tools/data/`.
 
 Surveys live in `<documents>/surveys/`. On iOS that folder is exposed to the
-Files app (**On My iPhone → CH4 Survey → surveys**) via `UIFileSharingEnabled`.
+Files app (**On My iPhone → GasSnifferBuddy → surveys**) via `UIFileSharingEnabled`.
 On Android (debug build) you can also pull them over USB:
 
 ```sh
-adb shell run-as io.github.jamestwallin.ch4survey ls files/surveys
-adb exec-out run-as io.github.jamestwallin.ch4survey cat files/surveys/2026-09-17_09-05-07.csv > tools/data/2026-09-17_09-05-07.csv
+adb shell run-as com.inorite.sensorbuddy ls files/surveys
+adb exec-out run-as com.inorite.sensorbuddy cat files/surveys/2026-09-17_09-05-07.csv > tools/data/2026-09-17_09-05-07.csv
 ```
 
 The CSV is the rev A column set followed by `ch4_rs_ohm,lpg_rs_ohm,vbat_mv,gps_accuracy_m`

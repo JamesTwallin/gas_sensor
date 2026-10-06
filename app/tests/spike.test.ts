@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { NO_SPIKE, SpikeDetector, type SpikeResult } from '../src/core/spike';
 
-// Deterministic "noise": a small triangle wave, so the MAD is non-zero but tiny.
+// Deterministic "noise": a small triangle wave.
 const noise = (t: number) => ((t / 250) % 4 < 2 ? 1 : -1) * 1.5;
 
 function feed(d: SpikeDetector, from: number, to: number, v: (t: number) => number, step = 250): SpikeResult[] {
@@ -37,20 +37,17 @@ describe('SpikeDetector', () => {
     expect(hold.slice(8).some((r) => r.spike)).toBe(false); // settles once the edge has passed
   });
 
-  it('ignores slow drift below the floor', () => {
-    const d = new SpikeDetector({ spikeFloorMvPerS: 25 });
+  it('the threshold is the setting, fixed, and slow drift below it is ignored', () => {
+    const d = new SpikeDetector({ spikeThresholdMvPerS: 25 });
     const r = feed(d, 0, 120_000, (t) => 2000 + noise(t) + 0.01 * t); // +10 mV/s ramp
     expect(r.some((x) => x.spike)).toBe(false);
-  });
-
-  it('threshold adapts to a noisier channel but never drops below the floor', () => {
-    const quietD = new SpikeDetector({ spikeFloorMvPerS: 25 });
-    const noisyD = new SpikeDetector({ spikeFloorMvPerS: 25 });
-    const q = feed(quietD, 0, 60_000, (t) => 2000 + noise(t));
-    // Period 1.5 s, so it does not cancel over the 1 s window like `noise` does.
-    const n = feed(noisyD, 0, 60_000, (t) => 2000 + ((t / 250) % 6 < 3 ? 60 : -60));
-    expect(q[q.length - 1].thresholdMvPerS).toBe(25);
-    expect(n[n.length - 1].thresholdMvPerS!).toBeGreaterThan(25);
+    expect(r[r.length - 1].thresholdMvPerS).toBe(25);
+    // Noise does not move it.
+    const noisy = feed(new SpikeDetector({ spikeThresholdMvPerS: 25 }), 0, 60_000, (t) => 2000 + ((t / 250) % 6 < 3 ? 60 : -60));
+    expect(noisy[noisy.length - 1].thresholdMvPerS).toBe(25);
+    // Falling edges are not spikes.
+    const fall = feed(new SpikeDetector(), 0, 5000, (t) => 3000 - 0.5 * t);
+    expect(fall.some((x) => x.spike)).toBe(false);
   });
 
   it('reset forgets history', () => {

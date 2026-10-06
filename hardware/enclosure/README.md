@@ -39,7 +39,8 @@ battery in its own pocket and traps it when screwed on.
   JST. The front shell's sensor-end wall carries a skirt that reaches down over
   the open end, so with the tray screwed on the slot is closed and the cell is
   captive. Four counterbored corner posts, lip into the shell's rebate on the
-  other three sides, zip-tie eyelets on the long walls. No vents in the
+  other three sides, zip-tie eyelets on the long walls (the tie passes through them front to
+  back). No vents in the
   battery compartment.
 - **Orientation**: the board lies component side down in the shell. It goes in
   as if turned over about its long axis, so the sensor end stays at the

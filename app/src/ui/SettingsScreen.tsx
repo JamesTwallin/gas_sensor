@@ -39,16 +39,16 @@ const FIELDS: Field[] = [
     hint: 'Correct the ppm estimate with the Figaro datasheet tables from the SHT40 reading. Off = assume 20 °C / 65 %RH',
   },
   {
-    key: 'warmupMs',
+    key: 'heaterWarmupMs',
     label: 'Warm-up (min)',
-    hint: '0 = none (default). The card reads WARMING UP for this long after power-on; charts and spikes run regardless',
+    hint: 'No spikes are flagged for this long after the board powers on (default 3). Charts still run. 0 = none',
     scale: 60_000,
     min: 0,
   },
+  { key: 'beep', label: 'Beep on spikes', hint: 'A short tone on every flagged sample' },
   { key: 'intervalMs', label: 'Sample interval (ms)', hint: '100–5000, sent to the board', min: 100, max: 5000 },
   { key: 'spikeWindowMs', label: 'Spike window (s)', hint: 'Slope is measured over this', scale: 1000, min: 0.25, max: 10 },
-  { key: 'spikeSigma', label: 'Spike sensitivity (σ)', hint: 'Lower = more sensitive; robust sigmas of recent slope noise', min: 1, max: 20 },
-  { key: 'spikeFloorMvPerS', label: 'Spike floor (mV/s)', hint: 'Slope below this is never a spike', min: 0 },
+  { key: 'spikeThresholdMvPerS', label: 'Spike threshold (mV/s)', hint: 'A slope above this is a spike', min: 0 },
 ];
 
 function inputStyle(theme: Theme, wide: boolean): StyleProp<TextStyle> {

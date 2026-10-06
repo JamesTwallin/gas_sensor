@@ -197,8 +197,9 @@ ch4_slope_mv_s,lpg_slope_mv_s,spike
   shows nor acts on them.
 - `ch4_slope_mv_s` / `lpg_slope_mv_s` are the first derivative of VRL over the
   app's spike window (default 1 s), and `spike` is `CH4`, `LPG`, `CH4+LPG` or
-  blank: the app's plume indicator (`app/src/core/spike.ts`, the same maths as
-  `tools/plot_spike.py`). A plume is a rising edge; slow drift is not.
+  blank: the app's plume indicator (`app/src/core/spike.ts`; the threshold is a
+  fixed mV/s setting, 25 by default, whereas `tools/plot_spike.py` scales its
+  own to the noise). A plume is a rising edge; slow drift is not.
 - `ch4_ppm_est` / `lpg_ppm_est` are the app's datasheet-curve estimates
   (`app/src/core/ppm.ts`: Rs/Ro power law with the Table 1 temperature and
   humidity correction, LPG referenced to iso-butane). They are only as good as

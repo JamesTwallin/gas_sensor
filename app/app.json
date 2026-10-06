@@ -1,25 +1,26 @@
 {
   "expo": {
-    "name": "CH4 Survey",
+    "name": "GasSnifferBuddy",
     "slug": "ch4-survey",
     "version": "0.1.0",
-    "scheme": "ch4survey",
+    "scheme": "sensorbuddy",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "io.github.jamestwallin.ch4survey",
+      "bundleIdentifier": "com.inorite.sensorbuddy",
       "infoPlist": {
-        "NSBluetoothPeripheralUsageDescription": "CH4 Survey talks to your methane sensor board over Bluetooth Low Energy.",
-        "NSLocationWhenInUseUsageDescription": "CH4 Survey tags each reading with your position so a survey can be plotted on a map.",
+        "NSBluetoothPeripheralUsageDescription": "GasSnifferBuddy talks to your methane sensor board over Bluetooth Low Energy.",
+        "NSLocationWhenInUseUsageDescription": "GasSnifferBuddy tags each reading with your position so a survey can be plotted on a map.",
+        "ITSAppUsesNonExemptEncryption": false,
         "UIFileSharingEnabled": true,
         "LSSupportsOpeningDocumentsInPlace": true
       }
     },
     "android": {
-      "package": "io.github.jamestwallin.ch4survey",
+      "package": "com.inorite.sensorbuddy",
       "adaptiveIcon": {
         "backgroundColor": "#111110",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -40,24 +41,32 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/withSingleLocationPermission",
       [
         "react-native-ble-plx",
         {
           "isBackgroundEnabled": false,
           "neverForLocation": true,
-          "bluetoothAlwaysPermission": "CH4 Survey talks to your methane sensor board over Bluetooth Low Energy."
+          "bluetoothAlwaysPermission": "GasSnifferBuddy talks to your methane sensor board over Bluetooth Low Energy."
         }
       ],
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "CH4 Survey tags each reading with your position so a survey can be plotted on a map.",
+          "locationAlwaysAndWhenInUsePermission": "GasSnifferBuddy tags each reading with your position so a survey can be plotted on a map.",
           "isAndroidBackgroundLocationEnabled": false
         }
       ],
       "expo-dev-client",
       "expo-sharing",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-audio",
+        {
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
+      ]
     ],
     "owner": "inorite-ltd",
     "extra": {

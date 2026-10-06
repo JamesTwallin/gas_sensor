@@ -160,7 +160,7 @@ export function LiveScreen({
             <Legend
               items={[
                 ['slope', theme.slope],
-                ['spike', theme.critical],
+                ['over threshold', theme.critical],
                 [`${short} VRL`, theme[series]],
               ]}
             />

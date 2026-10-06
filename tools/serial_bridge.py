@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""USB-serial -> Wi-Fi bridge for the CH4 Survey phone app.
+"""USB-serial -> Wi-Fi bridge for the GasSnifferBuddy phone app.
 
 Plug the sensor board into this PC over USB and run this script. It reads the
 board's serial CSV, turns every row into the BLE protocol-v1 Sample packet

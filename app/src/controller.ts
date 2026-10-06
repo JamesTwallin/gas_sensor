@@ -39,6 +39,7 @@ import { BridgeDeviceLink } from './services/bridgeDevice';
 import { loadCalibration, saveCalibration } from './services/calibrationStore';
 import type { DeviceLink, LinkHandlers, LinkStatus, ScannedDevice } from './services/device';
 import { GpsService, type GpsStatus } from './services/gps';
+import { beep, disposeBeeper, prepareBeeper } from './services/beeper';
 import { setKeepAwake } from './services/keepAwake';
 import { Recorder, type SurveyFile } from './services/recorder';
 import { saveSettings } from './services/settingsStore';
@@ -209,6 +210,7 @@ export class AppController {
       if (s !== 'active') void this.recorder.flush();
     });
     void this.updateKeepAwake();
+    if (this.state.settings.beep) void prepareBeeper();
   }
 
   dispose(): void {
@@ -221,6 +223,7 @@ export class AppController {
     void this.gps.stop();
     void this.recorder.stop();
     void setKeepAwake(false);
+    disposeBeeper();
   }
 
   // ------------------------------------------------------------ chart access
@@ -398,35 +401,44 @@ export class AppController {
     // already shows; no toast, it fired on every bench reflash and power cycle.
     if (out.rebooted) this.chart.clear();
 
-    // Spike detection on the load voltages whenever the heaters are on. It is
-    // not gated on warm-up: the first seconds after power-on ramp steeply and
-    // may flag, which is preferable to a blank derivative trace.
+    // The slope is computed whenever the heaters are on, so the trace is never
+    // blank, but a sample only counts as a spike once the warm-up is over: a
+    // cold element ramps steeply for minutes and would flag the whole time.
     const heatersOn = out.state !== 'HEATER_OFF';
+    const running = out.state === 'RUNNING';
     if (!heatersOn || out.rebooted) {
       this.spike.ch4.reset();
       this.spike.lpg.reset();
       // Device time restarted (or is about to): old spike times no longer compare.
       this.lastSpikeT = { ch4: -Infinity, lpg: -Infinity };
     }
+    const detect = (d: SpikeDetector, mv: number): SpikeResult => {
+      const r = d.push(s.msSinceBoot, mv);
+      return running ? r : { ...r, spike: false };
+    };
     const sp = heatersOn
-      ? { ch4: this.spike.ch4.push(s.msSinceBoot, ch4Mv), lpg: this.spike.lpg.push(s.msSinceBoot, lpgMv) }
+      ? { ch4: detect(this.spike.ch4, ch4Mv), lpg: detect(this.spike.lpg, lpgMv) }
       : { ch4: NO_SPIKE, lpg: NO_SPIKE };
     const bursts: string[] = [];
     const active = { ch4: false, lpg: false };
+    let flagged = false;
     for (const ch of ['ch4', 'lpg'] as const) {
       if (sp[ch].spike) {
         if (s.msSinceBoot - this.lastSpikeT[ch] > SPIKE_BURST_GAP_MS) {
           bursts.push(`${ch.toUpperCase()} +${Math.round(sp[ch].slopeMvPerS ?? 0)} mV/s`);
         }
         this.lastSpikeT[ch] = s.msSinceBoot;
+        flagged = true;
       }
       active[ch] = s.msSinceBoot - this.lastSpikeT[ch] <= SPIKE_HOLD_MS;
     }
+    // Every flagged sample beeps (rate-limited in the beeper), so a plume is
+    // heard as a run of tones.
+    if (flagged && settings.beep) beep(phoneTimeMs);
     let spikes = { ...this.state.spikes, ch4: sp.ch4, lpg: sp.lpg, active };
     if (bursts.length) {
-      const text = bursts.join(', ');
-      spikes = { ...spikes, lastAt: phoneTimeMs, lastText: text, count: spikes.count + bursts.length };
-      this.toast(`Spike: ${text}`);
+      // No toast: the red card, the beep and the LED already say it.
+      spikes = { ...spikes, lastAt: phoneTimeMs, lastText: bursts.join(', '), count: spikes.count + bursts.length };
       // Three white blinks on the board (opcode 0x02) so a plume is visible without the phone.
       if (settings.driveLed && this.link) void this.link.control(encodeIdentify());
     }
@@ -438,8 +450,6 @@ export class AppController {
       lpg: lpgMv,
       ch4Slope: sp.ch4.slopeMvPerS,
       lpgSlope: sp.lpg.slopeMvPerS,
-      ch4Spike: sp.ch4.spike,
-      lpgSpike: sp.lpg.spike,
     });
 
     if (this.recorder.recording) {

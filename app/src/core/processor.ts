@@ -1,10 +1,11 @@
 // Run-state tracking on the phone, descended from the rev A signal processing
 // (legacy/rev_a/src/main.cpp). Pure, no DOM.
 //
-//   WARMUP      - optional (warmupMs, 0 by default): the heater is settling.
-//                 Rev A timed this from power-on, so it is timed here from the
-//                 device's ms_since_boot: connecting to a board that has been on
-//                 for a while skips it entirely.
+//   WARMUP      - the heater is settling (heaterWarmupMs, 3 min by default):
+//                 the slope is charted but no spike is flagged. Rev A timed this
+//                 from power-on, so it is timed here from the device's
+//                 ms_since_boot: connecting to a board that has been on for a
+//                 while skips it entirely.
 //   RUNNING     - normal operation.
 //   HEATER_OFF  - flag bit6 (low-battery cutoff): the sensor output is
 //                 meaningless. When the heaters come back the element is cold,
@@ -122,7 +123,7 @@ export class Processor {
     this.lastT = t;
 
     if (this._state === null) {
-      if (t < this.s.warmupMs) {
+      if (t < this.s.heaterWarmupMs) {
         this._state = 'WARMUP';
         this.stateStart = 0; // warm-up is timed from device power-on
       } else {
@@ -142,7 +143,7 @@ export class Processor {
       this.stateStart = t; // heater back on now: warm-up is timed from here
     }
 
-    if (this._state === 'WARMUP' && t - this.stateStart >= this.s.warmupMs) {
+    if (this._state === 'WARMUP' && t - this.stateStart >= this.s.heaterWarmupMs) {
       this.startRunning(t);
     }
 
@@ -156,7 +157,7 @@ export class Processor {
       t,
       state,
       stateElapsedMs: t - this.stateStart,
-      stateDurationMs: state === 'WARMUP' ? this.s.warmupMs : 0,
+      stateDurationMs: state === 'WARMUP' ? this.s.heaterWarmupMs : 0,
       ch4: { voutMv: ch4Mv, baselineMv: this.ch4.baselineMv },
       lpg: { voutMv: lpgMv, baselineMv: this.lpg.baselineMv },
       rebooted,

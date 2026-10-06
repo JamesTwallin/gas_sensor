@@ -2,10 +2,17 @@
 
 export interface ProcessingSettings {
   /**
-   * Heater warm-up after device power-on (ms since boot). The state card reads
-   * WARMING UP until then; slope and spike detection run regardless.
+   * Heater warm-up after device power-on (ms since boot). The slope is still
+   * computed and charted, but no spike is flagged (so no beep, LED, toast or
+   * CSV mark) until it is over: a cold sensor ramps steeply for minutes. The
+   * state card reads WARMING UP meanwhile. Connecting to a board that has been
+   * on longer than this skips it.
+   *
+   * Named heaterWarmupMs rather than the earlier warmupMs so phones that stored
+   * the brief no-warm-up default (0, 2026-09-30 to 2026-10-03) pick up this
+   * default instead.
    */
-  warmupMs: number;
+  heaterWarmupMs: number;
 }
 
 export interface AppSettings extends ProcessingSettings {
@@ -25,10 +32,11 @@ export interface AppSettings extends ProcessingSettings {
    * voltages, Rs and the slope are never compensated.
    */
   envCompensate: boolean;
-  /** Spike detector (core/spike.ts): derivative window (ms), robust-sigma threshold, floor (mV/s). */
+  /** Spike detector (core/spike.ts): derivative window (ms) and the fixed threshold (mV/s). */
   spikeWindowMs: number;
-  spikeSigma: number;
-  spikeFloorMvPerS: number;
+  spikeThresholdMvPerS: number;
+  /** Beep on every flagged sample (services/beeper.ts). */
+  beep: boolean;
   /**
    * Talk to the board through tools/serial_bridge.py on a PC (USB serial
    * relayed over Wi-Fi) instead of Bluetooth. Forced on where the BLE native
@@ -40,7 +48,8 @@ export interface AppSettings extends ProcessingSettings {
 }
 
 export const DEFAULT_PROCESSING: ProcessingSettings = {
-  warmupMs: 0, // no warm-up gate: everything is plotted and detected from the first sample
+  // Figaro's "initial action" settles in roughly 3-5 min from cold (docs/sensors.md).
+  heaterWarmupMs: 3 * 60_000,
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -52,8 +61,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lightTheme: false,
   envCompensate: true,
   spikeWindowMs: 1000,
-  spikeSigma: 4,
-  spikeFloorMvPerS: 25,
+  spikeThresholdMvPerS: 25,
+  beep: true,
   usbBridge: false,
   bridgeHost: '',
 };
@@ -72,7 +81,5 @@ export function sanitizeSettings(raw: unknown): AppSettings {
       (out[key] as number) = v;
     }
   }
-  // Phones that stored the old 3 min default (before 2026-09-30) get the new no-warm-up default.
-  if (out.warmupMs === 3 * 60_000) out.warmupMs = 0;
   return out;
 }

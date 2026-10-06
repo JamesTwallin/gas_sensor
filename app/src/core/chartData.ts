@@ -9,9 +9,6 @@ export interface ChartPoint {
   /** First derivative of VRL (core/spike.ts), mV/s; null/undefined until the window fills or while the heaters are off. */
   ch4Slope?: number | null;
   lpgSlope?: number | null;
-  /** Spike flagged on this sample. */
-  ch4Spike?: boolean;
-  lpgSpike?: boolean;
 }
 
 export class ChartBuffer {

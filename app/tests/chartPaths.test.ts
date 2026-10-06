@@ -140,7 +140,7 @@ describe('buildLiveChart', () => {
 
 describe('buildSlopeOverview', () => {
   const sloped = (n: number, slope: (i: number) => number | null): ChartPoint[] =>
-    series(n, 1000, () => 500).map((p, i) => ({ ...p, ch4Slope: slope(i), ch4Spike: (slope(i) ?? 0) > 150 }));
+    series(n, 1000, () => 500).map((p, i) => ({ ...p, ch4Slope: slope(i) }));
 
   it('fits the window to the data: 49 s of samples fill the width and label as such', () => {
     const c = buildSlopeOverview(sloped(50, () => 2), 49_000, 600_000, layout);
@@ -152,13 +152,13 @@ describe('buildSlopeOverview', () => {
     expect(buildSlopeOverview(sloped(700, () => 2), 699_000, 600_000, layout).leftLabel).toBe('−10 min');
   });
 
-  it('keeps a one-sample plume edge via peak-per-column decimation, and marks it once', () => {
+  it('keeps a one-sample plume edge via peak-per-column decimation, and draws it hot', () => {
     const c = buildSlopeOverview(sloped(600, (i) => (i === 300 ? 800 : -3)), 599_000, 600_000, layout, 'ch4', 150);
     expect(c.yMax).toBeGreaterThan(800);
     const ys = [...c.lines.join(' ').matchAll(/[ML]\S+ (\S+)/g)].map((m) => parseFloat(m[1]));
     // The edge must reach near the top of the plot, not be averaged away.
     expect(Math.min(...ys)).toBeLessThan(layout.padT + 30);
-    expect(c.spikeMarks).toHaveLength(1);
+    expect(c.hotLines).toHaveLength(1);
     expect(c.thresholdY!).toBeLessThan(c.zeroY);
   });
 
@@ -168,30 +168,33 @@ describe('buildSlopeOverview', () => {
     expect(c.lines).toHaveLength(2);
     const none = buildSlopeOverview(series(50, 1000, () => 500), 49_000, 600_000, layout);
     expect(none.lines).toEqual([]);
-    expect(none.spikeMarks).toEqual([]);
+    expect(none.hotLines).toEqual([]);
   });
 });
 
-describe('spike overlay and derivative panel', () => {
+describe('derivative panel', () => {
   const withSpikes = (): ChartPoint[] =>
     series(40, 250, (i) => 500 + (i > 20 ? 300 : 0)).map((p, i) => ({
       ...p,
       ch4Slope: i < 4 ? null : i === 21 || i === 22 ? 600 : 2,
-      ch4Spike: i === 21 || i === 22,
     }));
 
-  it('marks flagged samples on the live trace', () => {
-    const c = buildLiveChart(withSpikes(), 40 * 250, 60_000, layout);
-    expect(c.spikeMarks).toHaveLength(2);
-    for (const m of c.spikeMarks) {
-      expect(m.x).toBeGreaterThan(layout.padL);
-      expect(m.y).toBeGreaterThanOrEqual(layout.padT);
-      expect(m.y).toBeLessThanOrEqual(layout.height - layout.padB);
-    }
-    expect(buildLiveChart(series(40, 250, () => 500), 40 * 250, 60_000, layout).spikeMarks).toEqual([]);
+  it('draws the over-threshold stretch as one hot run joined to the trace', () => {
+    const c = buildSlopeChart(withSpikes(), 40 * 250, 60_000, layout, 'ch4', 150);
+    expect(c.hotLines).toHaveLength(1);
+    // Samples 20 (cool), 21, 22 (hot), 23 (cool): four points, so the red stroke meets the green one.
+    const pts = [...c.hotLines[0].matchAll(/[ML](\S+) (\S+)/g)].map((m) => [parseFloat(m[1]), parseFloat(m[2])]);
+    expect(pts).toHaveLength(4);
+    expect(pts[0][1]).toBeGreaterThan(c.thresholdY!); // below the threshold line on screen
+    expect(pts[1][1]).toBeLessThan(c.thresholdY!);
+    expect(pts[3][1]).toBeGreaterThan(c.thresholdY!);
+    // Without a threshold nothing is hot; a hot run at the very end still closes.
+    expect(buildSlopeChart(withSpikes(), 40 * 250, 60_000, layout, 'ch4', null).hotLines).toEqual([]);
+    const ending = withSpikes().map((p, i) => ({ ...p, ch4Slope: i >= 38 ? 600 : p.ch4Slope }));
+    expect(buildSlopeChart(ending, 40 * 250, 60_000, layout, 'ch4', 150).hotLines).toHaveLength(2);
   });
 
-  it('derivative panel shares the time axis and has its own limits including zero', () => {
+  it('shares the time axis with the live chart and has its own limits including zero', () => {
     const live = buildLiveChart(withSpikes(), 40 * 250, 60_000, layout);
     const c = buildSlopeChart(withSpikes(), 40 * 250, 60_000, layout, 'ch4', 150);
     expect(c.lines.length).toBeGreaterThan(0);
@@ -201,13 +204,13 @@ describe('spike overlay and derivative panel', () => {
     expect(c.zeroY).toBeLessThan(layout.height - layout.padB);
     expect(c.thresholdY).not.toBeNull();
     expect(c.thresholdY!).toBeLessThan(c.zeroY); // above zero on screen
-    // Same x for the same sample in both charts.
-    expect(c.spikeMarks).toHaveLength(2);
-    expect(c.spikeMarks[0].x).toBeCloseTo(live.spikeMarks[0].x, 6);
-    // A flat trace still gets a visible range and no marks.
+    // Same x for the newest sample in both charts.
+    const lastX = (d: string) => parseFloat([...d.matchAll(/[ML](\S+) /g)].pop()![1]);
+    expect(lastX(c.lines[c.lines.length - 1])).toBeCloseTo(live.end!.x, 6);
+    // A flat trace still gets a visible range and nothing hot.
     const flat = buildSlopeChart(series(40, 250, () => 500), 40 * 250, 60_000, layout);
     expect(flat.lines).toEqual([]);
-    expect(flat.spikeMarks).toEqual([]);
+    expect(flat.hotLines).toEqual([]);
     expect(flat.yMax - flat.yMin).toBeGreaterThan(20);
   });
 });

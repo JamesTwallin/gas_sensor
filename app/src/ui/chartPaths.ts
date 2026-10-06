@@ -11,7 +11,8 @@
 // headroom, and it never goes below 0.
 //
 //  - slope:    the first derivative on its own axis, zero and the spike
-//              threshold ruled, spike samples marked; up to the last 60 s.
+//              threshold ruled, the trace red and heavier where it is over
+//              the threshold; up to the last 60 s.
 //              This is the plume indicator and the chart that matters.
 //  - live:     VRL as a washed area + line under it, for context.
 //  - overview: peak slope per column over up to the last 10 min.
@@ -75,7 +76,6 @@ export interface XY {
 
 export const valueOf = (p: ChartPoint, s: Series): number => (s === 'ch4' ? p.ch4 : p.lpg);
 export const slopeOf = (p: ChartPoint, s: Series): number | null => (s === 'ch4' ? p.ch4Slope : p.lpgSlope) ?? null;
-export const spikeOf = (p: ChartPoint, s: Series): boolean => (s === 'ch4' ? p.ch4Spike : p.lpgSpike) === true;
 
 /** A round number of mV/s at or above the largest |slope| on screen, for the derivative axis. */
 export function slopeScale(maxAbs: number): number {
@@ -166,8 +166,6 @@ export interface LiveChart extends ChartFrame {
   lines: string[];
   /** Newest point of the trace, for the end marker; null without data. */
   end: XY | null;
-  /** Where the trace sits on each sample the detector flagged. */
-  spikeMarks: XY[];
 }
 
 export function buildLiveChart(
@@ -201,17 +199,14 @@ export function buildLiveChart(
     end = xy[xy.length - 1];
   }
 
-  const spikeMarks: XY[] = [];
-  for (const p of pts) if (spikeOf(p, series)) spikeMarks.push({ x: x(p.t), y: y(valueOf(p, series)) });
-
-  return { ...f, areas, lines, end, spikeMarks };
+  return { ...f, areas, lines, end };
 }
 
 // ---- derivative panel -----------------------------------------------------------
 // Shares the live chart's time axis (same fitSpan, same x mapping) but has its
 // own y-limits: the slopes' own min..max, always including zero, with headroom.
-// Zero is ruled; the spike threshold is ruled when known; flagged samples are
-// marked on the trace.
+// Zero is ruled; the spike threshold is ruled when known, and the stretches of
+// trace above it are returned separately so they can be drawn red and heavier.
 
 const SLOPE_STEPS = [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
 
@@ -222,7 +217,9 @@ export interface SlopeChart {
   /** y of zero mV/s. */
   zeroY: number;
   lines: string[];
-  spikeMarks: XY[];
+  /** The parts of `lines` above the threshold, each extended one sample either
+   *  side so the heavier stroke joins the trace without a gap. */
+  hotLines: string[];
   /** y of the current threshold, or null when none is known. */
   thresholdY: number | null;
   leftLabel: string;
@@ -232,7 +229,6 @@ export interface SlopeChart {
 interface SlopeSample {
   t: number;
   slope: number | null;
-  spike: boolean;
 }
 
 /** Shared by the live panel and the overview: samples in, paths and rules out. */
@@ -280,21 +276,34 @@ function slopeGeometry(
   const x = (t: number) => l.padL + ((t - t0) / span) * plotW;
 
   const lines: string[] = [];
-  const spikeMarks: XY[] = [];
+  const hotLines: string[] = [];
   let seg: XY[] = [];
+  let hot: XY[] = [];
   let prevT = -Infinity;
+  const flush = () => {
+    if (seg.length > 1) lines.push(polyline(seg));
+    if (hot.length > 1) hotLines.push(polyline(hot));
+    seg = [];
+    hot = [];
+  };
   for (const p of samples) {
-    if (!ok(p.slope) || p.t - prevT > gapMs) {
-      if (seg.length > 1) lines.push(polyline(seg));
-      seg = [];
-    }
+    if (!ok(p.slope) || p.t - prevT > gapMs) flush();
     prevT = p.t;
     if (!ok(p.slope)) continue;
     const at = { x: x(p.t), y: y(p.slope) };
+    if (thresholdMvPerS !== null && p.slope > thresholdMvPerS) {
+      // Entering a hot run: start it from the previous (cool) point.
+      if (!hot.length && seg.length) hot.push(seg[seg.length - 1]);
+      hot.push(at);
+    } else if (hot.length) {
+      // Leaving one: end it on this (cool) point.
+      hot.push(at);
+      if (hot.length > 1) hotLines.push(polyline(hot));
+      hot = [];
+    }
     seg.push(at);
-    if (p.spike) spikeMarks.push(at);
   }
-  if (seg.length > 1) lines.push(polyline(seg));
+  flush();
 
   return {
     yMin,
@@ -302,7 +311,7 @@ function slopeGeometry(
     gridLines,
     zeroY: Math.round(y(0)) + 0.5,
     lines,
-    spikeMarks,
+    hotLines,
     thresholdY: thresholdMvPerS !== null ? y(thresholdMvPerS) : null,
     leftLabel,
     rightLabel,
@@ -318,14 +327,14 @@ export function buildSlopeChart(
   thresholdMvPerS: number | null = null,
 ): SlopeChart {
   const span = fitSpan(pts, now, spanMs);
-  const samples = pts.map((p) => ({ t: p.t, slope: slopeOf(p, series), spike: spikeOf(p, series) }));
+  const samples = pts.map((p) => ({ t: p.t, slope: slopeOf(p, series) }));
   return slopeGeometry(samples, now - span, span, l, thresholdMvPerS, GAP_MS, spanLabel(span), 'now');
 }
 
 /**
  * The overview strip: the largest slope in each 2 px column over up to the
  * last `spanMs`, so a plume edge a few samples long is not lost between
- * pixels. A column is marked when any sample in it was flagged.
+ * pixels.
  */
 export function buildSlopeOverview(
   pts: readonly ChartPoint[],
@@ -342,13 +351,7 @@ export function buildSlopeOverview(
   const colMs = span / cols;
   const peaks = peakPerColumn(pts, t0, now, cols, (p) => slopeOf(p, series) ?? -Infinity);
 
-  const spikeCols = new Set<number>();
-  for (const p of pts) {
-    if (p.t < t0 || p.t > now || !spikeOf(p, series)) continue;
-    spikeCols.add(Math.min(cols - 1, Math.floor((p.t - t0) / colMs)));
-  }
-
-  const samples = peaks.map((p) => ({ t: t0 + (p.col + 0.5) * colMs, slope: p.peak, spike: spikeCols.has(p.col) }));
+  const samples = peaks.map((p) => ({ t: t0 + (p.col + 0.5) * colMs, slope: p.peak }));
   // Columns without samples break the line (so a link drop reads as a gap).
   return slopeGeometry(samples, t0, span, l, thresholdMvPerS, GAP_MS + 2 * colMs, spanLabel(span), 'now');
 }

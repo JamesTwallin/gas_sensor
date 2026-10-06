@@ -4,7 +4,7 @@ import { parseSample } from '../src/core/protocol';
 import { vrlFromTap } from '../src/core/sensor';
 import { SimulatedBoard } from '../src/core/simulator';
 
-const S = { warmupMs: 10_000 };
+const S = { heaterWarmupMs: 10_000 };
 
 function run(p: Processor, from: number, to: number, step: number, v: (t: number) => number, extra = {}): ProcessorOutput {
   let out!: ProcessorOutput;
@@ -41,9 +41,10 @@ describe('Processor state machine', () => {
     }
   });
 
-  it('runs from the first sample with the default (no) warm-up', () => {
+  it('warms up for 3 min by default', () => {
     const p = new Processor();
-    expect(p.push({ t: 250, ch4Mv: 3000, lpgMv: 3000 }).state).toBe('RUNNING');
+    expect(p.push({ t: 250, ch4Mv: 3000, lpgMv: 3000 }).state).toBe('WARMUP');
+    expect(p.push({ t: 180_000, ch4Mv: 3000, lpgMv: 3000 }).state).toBe('RUNNING');
   });
 
   it('skips warm-up when the board has already been on long enough', () => {
@@ -77,7 +78,7 @@ describe('Processor state machine', () => {
 
   it('end-to-end with the simulator: parses, warms up, runs', () => {
     const board = new SimulatedBoard({ seed: 42, meanPlumeGapMs: 30_000 });
-    const p = new Processor({ warmupMs: 180_000 });
+    const p = new Processor({ heaterWarmupMs: 180_000 });
     const states = new Set<string>();
     let o!: ProcessorOutput;
     for (let i = 0; i < 4 * 60 * 20; i++) {

@@ -159,24 +159,32 @@ module hex_vents(x0, ya, x1, yb, z0, h, d = 3.6, gap = 1.3) {
         }
 }
 
-// Zip-tie eyelets on the long walls (5 mm ties, running parallel to the wall)
+// Zip-tie eyelets on the long walls (5 mm ties, passing front to back: the slot
+// runs through the eyelet in z, its 5.4 mm width along the wall)
 tie_len = 10; tie_proud = 3.6; tie_h = 8.0;
+tie_slot = 5.4;
 module tie_eyelets(z0) {
     for (m = [0, 1]) for (x = [12, out_x - 12 - tie_len])
-        translate([x, m ? out_y - eps : -tie_proud + eps, z0]) difference() {
+        // mirrored on the low-y wall so all four have the chamfer on the outside
+        translate([x, m ? out_y - eps : eps, z0]) mirror([0, m ? 0 : 1, 0]) difference() {
             hull() {
                 cube([tie_len, tie_proud - 1, tie_h]);
                 translate([1, 0, 0]) cube([tie_len - 2, tie_proud, tie_h - 1]);
             }
-            translate([-1, 0.8, 1.6]) cube([tie_len + 2, 2.0, 5.4]);
+            translate([(tie_len - tie_slot) / 2, 0.8, -1]) cube([tie_slot, 2.0, tie_h + 2]);
         }
 }
 
+// Lanyard loop on the SHT40 end. loop_rim is the plastic between the hole and
+// the outer edge, which is what a cord pulls against (it was 0.5 mm: a string
+// would cut through it).
+loop_hole = 4.2; loop_rim = 3.0; loop_h = 6.0;
 module lanyard_loop(z0) {
+    hole_x = -1.5 - loop_hole / 2;              // hole starts 1.5 mm off the wall
+    out = -hole_x + loop_hole / 2 + loop_rim;   // how far the loop stands off the wall
     difference() {
-        translate([-6.5, out_y/2 - 6, z0]) rrect(9, 12, 3, 4.5);
-        translate([-3.2, out_y/2, z0 - eps]) cylinder(h = 10, d = 4.2);
-        translate([-9, out_y/2 - 8, z0 - eps]) cube([3.2, 16, 10]);
+        translate([-out, out_y/2 - 6, z0]) rrect(out + 2.5, 12, 3, loop_h);
+        translate([hole_x, out_y/2, z0 - eps]) cylinder(h = loop_h + 2*eps, d = loop_hole);
     }
 }
 
