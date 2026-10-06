@@ -170,6 +170,7 @@ export function SurveyMap({
   onModeChange,
   fullscreen = false,
   onToggleFullscreen,
+  fitHere = true,
 }: {
   state: UiState;
   /** The track; re-read whenever state.trackTick changes. */
@@ -183,6 +184,8 @@ export function SurveyMap({
   /** Laid out to fill a full-screen modal: map on top, toggle and colour bar below. */
   fullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  /** Fit the view to where you are as well as the track; off for a saved survey, which may be miles away. */
+  fitHere?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const [size, setSize] = useState<Size | null>(null);
@@ -206,9 +209,9 @@ export function SurveyMap({
   const auto = useMemo(() => {
     if (!size) return null;
     const pts: Merc[] = [...points];
-    if (here) pts.push(here);
+    if (here && (fitHere || !pts.length)) pts.push(here);
     return fitView(pts, size, FIT_PAD_PX);
-  }, [size, state.trackTick, here?.mx, here?.my]);
+  }, [size, state.trackTick, here?.mx, here?.my, fitHere]);
   const view: MapView | null =
     manual ?? (followZoom !== null && here ? { cx: here.mx, cy: here.my, zoom: followZoom } : auto);
   const following = !manual && followZoom !== null && !!here;

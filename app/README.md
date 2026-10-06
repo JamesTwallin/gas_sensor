@@ -32,6 +32,7 @@ app/
     mapView.ts     map maths: Web Mercator, which tiles to show, fit-to-track (unit-tested)
     track.ts       the survey track: one point per GPS fix with its readings (unit-tested)
     heatmap.ts     ground cells, colour scale and range for the map (unit-tested)
+    surveyCsv.ts   reads a saved survey CSV back into a map track (unit-tested)
   src/controller.ts  the wiring: BLE/simulator -> core -> UI state, GPS, recording
                      (deliberately not src/app/ — Expo treats that as the
                       Expo Router routes directory)
@@ -115,7 +116,7 @@ truth and EAS runs `prebuild` itself.
 ## Tests and type-checking
 
 ```sh
-pnpm test         # vitest: src/core + src/ui/chartPaths — 107 tests
+pnpm test         # vitest: src/core + src/ui/chartPaths — 152 tests
 pnpm typecheck
 ```
 
@@ -163,6 +164,12 @@ UUID and shows its own picker.
    the back gesture closes it.
    Fixes less accurate than 25 m are left off, so indoors the route may not
    appear. The map images come from Esri World Imagery and need a data connection.
+   **Looking at an old survey:** tap **Show on map** on any saved survey in the
+   list and the map redraws that survey instead. **Back to live map** returns to
+   the current one. **Open a CSV…** loads a survey from somewhere else (Files,
+   Google Drive, an email attachment, a colleague's phone): it is copied into
+   your survey list and shown. Older SD-card CSVs from the rev A board load too,
+   but they have no slope column, so only the **Raw** map shows anything for them.
 4. Tap **Present** for presentation mode: just the two slopes, full screen and
    large, for filming or screen-recording. The ✕ (or Android back) leaves it.
 5. A red **HEATERS OFF** banner means the firmware's low-battery cutoff tripped:

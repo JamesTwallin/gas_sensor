@@ -44,6 +44,7 @@ import { setKeepAwake } from './services/keepAwake';
 import { Recorder, type SurveyFile } from './services/recorder';
 import { saveSettings } from './services/settingsStore';
 import { SimDeviceLink } from './services/simDevice';
+import { trackFromCsv } from './core/surveyCsv';
 import { TrackBuffer, type TrackPoint } from './core/track';
 
 export const LIVE_SPAN_MS = 60_000;
@@ -107,6 +108,8 @@ export interface UiState {
   chartTick: number;
   /** Bumped whenever the survey track gains a point or is cleared (map view). */
   trackTick: number;
+  /** A saved survey shown on the map in place of the live track; null for live. */
+  shownSurvey: string | null;
 }
 
 const IDLE_SPIKES: UiState['spikes'] = {
@@ -127,6 +130,8 @@ export class AppController {
   private gps: GpsService;
   /** The recording's GPS track for the survey map: one point per fix. */
   private track = new TrackBuffer();
+  /** A saved survey's track, loaded from its CSV (showSurvey). */
+  private shown: readonly TrackPoint[] | null = null;
   private link: DeviceLink | null = null;
   private scan: ScanHandle | null = null;
   private lastSeq: number | null = null;
@@ -185,6 +190,7 @@ export class AppController {
       toast: null,
       chartTick: 0,
       trackTick: 0,
+      shownSurvey: null,
     };
   }
 
@@ -582,7 +588,8 @@ export class AppController {
         const name = await this.recorder.start();
         // A new survey starts a new trace; the last one stays on the map until then.
         this.track.clear();
-        this.patch({ trackTick: this.state.trackTick + 1 });
+        this.shown = null;
+        this.patch({ trackTick: this.state.trackTick + 1, shownSurvey: null });
         this.toast(`Recording to ${name}`);
         if (!this.link) this.toast('Recording — connect a sensor to log rows');
       }
@@ -597,9 +604,32 @@ export class AppController {
     void this.gps.start();
   }
 
-  /** The current (or last) recording's track, for the survey map. */
+  /** The track for the survey map: a shown saved survey, else the current (or last) recording. */
   trackPoints(): readonly TrackPoint[] {
-    return this.track.points();
+    return this.shown ?? this.track.points();
+  }
+
+  /** Put a saved survey on the map; null (or the file being recorded) goes back to live. */
+  async showSurvey(name: string | null): Promise<void> {
+    if (name === null || name === this.recorder.fileName) {
+      this.shown = null;
+      this.patch({ shownSurvey: null, trackTick: this.state.trackTick + 1 });
+      return;
+    }
+    const points = trackFromCsv(await Recorder.read(name));
+    if (!points.length) throw new Error(`No GPS positions in ${name}`);
+    this.shown = points;
+    this.patch({ shownSurvey: name, trackTick: this.state.trackTick + 1 });
+  }
+
+  /** Copy a CSV picked from elsewhere into the survey list and show it. Returns its name. */
+  async importSurvey(fileName: string, text: string): Promise<string> {
+    const points = trackFromCsv(text); // throws on a file that is not a survey
+    if (!points.length) throw new Error(`No GPS positions in ${fileName}`);
+    const name = await Recorder.importText(fileName, text);
+    this.shown = points;
+    this.patch({ shownSurvey: name, trackTick: this.state.trackTick + 1 });
+    return name;
   }
 
   listSurveys(): Promise<SurveyFile[]> {
@@ -613,6 +643,7 @@ export class AppController {
 
   async deleteSurvey(name: string): Promise<void> {
     await Recorder.remove(name);
+    if (name === this.state.shownSurvey) await this.showSurvey(null);
   }
 
   // ------------------------------------------------------------ settings

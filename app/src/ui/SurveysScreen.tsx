@@ -1,5 +1,8 @@
-// Recorded CSVs: share one to get it onto a computer, or delete it.
+// Recorded CSVs: show one on the map, share one to get it onto a computer, open
+// one from elsewhere (Files, Drive, an email), or delete one.
 
+import * as DocumentPicker from 'expo-document-picker';
+import { File } from 'expo-file-system';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Modal } from 'react-native';
 import type { AppController, UiState } from '../controller';
@@ -27,6 +30,8 @@ export function SurveysScreen({
   const [heatMode, setHeatMode] = useState<HeatMode>('spikes');
   const [fullMap, setFullMap] = useState(false);
   const trackLen = points.length;
+  const shown = state.shownSurvey;
+  const fail = (e: unknown) => controller.toast(`Failed: ${e instanceof Error ? e.message : String(e)}`);
 
   const refresh = useCallback(async () => {
     setFiles(await controller.listSurveys());
@@ -46,7 +51,30 @@ export function SurveysScreen({
     try {
       await controller.shareSurvey(name);
     } catch (e) {
-      controller.toast(`Failed: ${e instanceof Error ? e.message : String(e)}`);
+      fail(e);
+    }
+  };
+
+  const onShow = async (name: string | null) => {
+    try {
+      await controller.showSurvey(name);
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const onOpen = async () => {
+    try {
+      // Any type: CSVs come through as text/csv, text/plain or octet-stream
+      // depending on where they live, so the file is checked by reading it.
+      const res = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+      if (res.canceled || !res.assets.length) return;
+      const asset = res.assets[0];
+      const name = await controller.importSurvey(asset.name, await new File(asset.uri).text());
+      await refresh();
+      controller.toast(`Opened ${name}`);
+    } catch (e) {
+      fail(e);
     }
   };
 
@@ -61,7 +89,7 @@ export function SurveysScreen({
             await controller.deleteSurvey(name);
             await refresh();
           } catch (e) {
-            controller.toast(`Failed: ${e instanceof Error ? e.message : String(e)}`);
+            fail(e);
           }
         },
       },
@@ -72,14 +100,26 @@ export function SurveysScreen({
     <Box>
       <H2>Survey map</H2>
       <Hint>
-        {state.recording
-          ? 'Live heatmap of this recording. Switch between the raw reading and spikes, and tap a square to read it.'
-          : trackLen
-            ? 'The last recording. Tap Record to start a new trace.'
-            : 'Tap Record and the route you walk is drawn here as you go.'}
+        {shown
+          ? `Showing ${shown}.`
+          : state.recording
+            ? 'Live heatmap of this recording. Switch between the raw reading and spikes, and tap a square to read it.'
+            : trackLen
+              ? 'The last recording. Tap Record to start a new trace.'
+              : 'Tap Record and the route you walk is drawn here as you go.'}
       </Hint>
+      {shown && (
+        <Box flexDirection="row" marginTop="xs">
+          <Btn
+            theme={theme}
+            title={state.recording ? 'Back to this recording' : 'Back to live map'}
+            onPress={() => void onShow(null)}
+          />
+        </Box>
+      )}
       <Box marginTop="s" marginBottom="l">
         <SurveyMap
+          key={shown ?? 'live'}
           state={state}
           points={points}
           theme={theme}
@@ -87,6 +127,7 @@ export function SurveysScreen({
           mode={heatMode}
           onModeChange={setHeatMode}
           onToggleFullscreen={() => setFullMap(true)}
+          fitHere={!shown}
         />
         <Modal
           visible={fullMap}
@@ -104,11 +145,15 @@ export function SurveysScreen({
             onModeChange={setHeatMode}
             fullscreen
             onToggleFullscreen={() => setFullMap(false)}
+            fitHere={!shown}
           />
         </Modal>
       </Box>
       <H2>Surveys</H2>
-      <Hint>Stored in app storage. Share a CSV</Hint>
+      <Hint>Stored in app storage. Share a CSV to get it onto a computer, or open one saved elsewhere.</Hint>
+      <Box flexDirection="row" marginTop="s">
+        <Btn theme={theme} title="Open a CSV…" onPress={() => void onOpen()} />
+      </Box>
       {files === null && <Hint>Loading…</Hint>}
       {files !== null && files.length === 0 && <Hint>No surveys yet. Connect, then tap Record.</Hint>}
       <Box gap="s" marginTop="s">
@@ -126,12 +171,16 @@ export function SurveysScreen({
               <Text variant="rowTitle">
                 {f.name}
                 {active ? ' · recording' : ''}
+                {f.name === shown ? ' · on map' : ''}
               </Text>
               <Text variant="rowMeta">
                 {fmtSize(f.size)}
                 {f.mtime ? ` · ${fmtWhen(f.mtime)}` : ''}
               </Text>
               <Box flexDirection="row" gap="s" marginTop="xs" flexWrap="wrap">
+                {f.name !== shown && !active && (
+                  <Btn theme={theme} title="Show on map" onPress={() => void onShow(f.name)} />
+                )}
                 <Btn theme={theme} title="Share / export" onPress={() => void onShare(f.name)} />
                 {!active && <Btn theme={theme} title="Delete" variant="danger" onPress={() => onDelete(f.name)} />}
               </Box>

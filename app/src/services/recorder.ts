@@ -113,6 +113,28 @@ export class Recorder {
     }
   }
 
+  static async read(name: string): Promise<string> {
+    const file = surveyFile(name);
+    if (!file.exists) throw new Error(`${name} is gone`);
+    return file.text();
+  }
+
+  /**
+   * Save CSV text picked from elsewhere (Files, Drive, an email) into the survey
+   * folder under a free name based on `name`; returns the name used.
+   */
+  static async importText(name: string, text: string): Promise<string> {
+    const dir = surveyDir();
+    if (!dir.exists) dir.create({ intermediates: true });
+    const base = (name.replace(/\.csv$/i, '').replace(/[^\w.-]+/g, '_') || 'imported').slice(0, 80);
+    let out = `${base}.csv`;
+    for (let n = 2; surveyFile(out).exists; n++) out = `${base}_${n}.csv`;
+    const file = surveyFile(out);
+    file.create();
+    file.write(text);
+    return out;
+  }
+
   static async remove(name: string): Promise<void> {
     surveyFile(name).delete();
   }
