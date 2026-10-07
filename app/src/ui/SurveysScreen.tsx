@@ -4,7 +4,7 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Modal } from 'react-native';
+import { Alert, Modal, useWindowDimensions } from 'react-native';
 import type { AppController, UiState } from '../controller';
 import type { HeatMode } from '../core/heatmap';
 import type { SurveyFile } from '../services/recorder';
@@ -14,7 +14,11 @@ import { SurveyMap } from './SurveyMap';
 import { Box, Text } from './restyle';
 import type { Theme } from './theme';
 
+// The inline map takes a share of the screen rather than a fixed height, so the
+// top of the Surveys list always peeks out under it. Drags on the map pan the
+// map, so the list showing is the main cue that the page scrolls.
 const MAP_HEIGHT = 380;
+const MAP_SCREEN_SHARE = 0.38;
 
 export function SurveysScreen({
   state,
@@ -26,6 +30,8 @@ export function SurveysScreen({
   theme: Theme;
 }) {
   const [files, setFiles] = useState<SurveyFile[] | null>(null);
+  const { height: windowHeight } = useWindowDimensions();
+  const inlineMapHeight = Math.min(MAP_HEIGHT, Math.round(windowHeight * MAP_SCREEN_SHARE));
   const points = controller.trackPoints();
   const [heatMode, setHeatMode] = useState<HeatMode>('spikes');
   const [fullMap, setFullMap] = useState(false);
@@ -123,7 +129,7 @@ export function SurveysScreen({
           state={state}
           points={points}
           theme={theme}
-          height={MAP_HEIGHT}
+          height={inlineMapHeight}
           mode={heatMode}
           onModeChange={setHeatMode}
           onToggleFullscreen={() => setFullMap(true)}

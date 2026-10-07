@@ -10,7 +10,7 @@ import {
   Inter_800ExtraBold,
   useFonts,
 } from '@expo-google-fonts/inter';
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -75,6 +75,13 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
 
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const [view, setView] = useState<ViewName>('live');
+  // Flash the scroll bar on every tab switch so it is obvious the page goes on
+  // below the fold (the Surveys list sits under the map).
+  const scroller = useRef<ScrollView>(null);
+  useEffect(() => {
+    const t = setTimeout(() => scroller.current?.flashScrollIndicators(), 300);
+    return () => clearTimeout(t);
+  }, [view]);
   // Presentation mode (ui/PresentScreen.tsx) replaces everything below the status bar.
   const [presenting, setPresenting] = useState(false);
   const stopPresenting = useCallback(() => setPresenting(false), []);
@@ -197,10 +204,10 @@ function Root({ initialSettings }: { initialSettings: AppSettings }) {
             </Box>
 
             <ScrollView
+              ref={scroller}
               style={{ flex: 1 }}
               contentContainerStyle={{ paddingTop: spacing.xs, paddingBottom: spacing.l }}
               keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
             >
               {view === 'live' && <LiveScreen state={state} controller={controller} theme={theme} />}
               {view === 'surveys' && <SurveysScreen state={state} controller={controller} theme={theme} />}
