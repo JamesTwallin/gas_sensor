@@ -15,7 +15,7 @@ to. Frames are streamed straight to ffmpeg, so no intermediate image files are
 ever written to disk -- nothing to clean up.
 
 The CSV is the one written by the phone app (and by the rev A firmware,
-legacy/rev_a/src/main.cpp); the columns the script needs are:
+archive/first_prototype/src/main.cpp); the columns the script needs are:
   millis_since_boot,state,ch4_vout_mv,ch4_baseline_mv,ch4_dev_mv,
   lpg_vout_mv,lpg_baseline_mv,lpg_dev_mv,temp_c,humidity_pct,pressure_hpa,
   utc_iso8601,lat,lon,alt_m,sats,fix

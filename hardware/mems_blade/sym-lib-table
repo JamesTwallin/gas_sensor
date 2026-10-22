@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "mems_blade")(type "KiCad")(uri "${KIPRJMOD}/lib/mems_blade.kicad_sym")(options "")(descr "MEMS blade sensor symbols (from LCSC via easyeda2kicad)"))
+)

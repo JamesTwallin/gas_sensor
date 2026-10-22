@@ -1,13 +1,13 @@
 # GasSnifferBuddy — companion app
 
-Phone app for the methane detector's phone-companion board, rev B and rev C
-([docs/phone_board.md](../docs/phone_board.md)).
+Phone app for the methane detector's phone-companion board
+([docs/phone_board.md](../docs/phone_board.md)), and for the MEMS rig.
 The board streams raw samples over BLE; the app turns them into the one thing
 that indicates a plume — the slope of each channel's load voltage, with a spike
-detector on top — charts it, and adds GPS tagging and CSV recording. Rev A's
-HIGH/MED/LOW classifier and its baseline are gone from the screen: the absolute
-level wanders too much to mean anything. The rolling baseline is still computed
-for the rev A CSV columns only, so the plotting tools keep working.
+detector on top — charts it, and adds GPS tagging and CSV recording. There is
+no HIGH/MED/LOW level on screen (the first prototype had one): the absolute
+level wanders too much to mean anything. A rolling baseline is still computed,
+but only to fill the old CSV columns, so the plotting tools keep working.
 
 One codebase: **Expo (SDK 57) + React Native + TypeScript**, built with EAS.
 
@@ -21,7 +21,7 @@ app/
     protocol.ts    BLE UUIDs, 20-byte Sample parser, Info JSON, control opcodes
     base64.ts      base64 <-> bytes (react-native-ble-plx speaks base64)
     sensor.ts      VRL = tap × tap_ratio, Rs = RL (VC − VRL) / VRL
-    windows.ts     time-based rolling window, rev A percentile
+    windows.ts     time-based rolling window, percentile for the CSV baseline
     spike.ts       slope (dVRL/dt) and the adaptive spike threshold
     processor.ts   WARMUP / RUNNING / HEATER_OFF state machine, CSV baseline, LED colour
     csv.ts         exact spec column order, row formatting, file names
@@ -168,7 +168,7 @@ UUID and shows its own picker.
    list and the map redraws that survey instead. **Back to live map** returns to
    the current one. **Open a CSV…** loads a survey from somewhere else (Files,
    Google Drive, an email attachment, a colleague's phone): it is copied into
-   your survey list and shown. Older SD-card CSVs from the rev A board load too,
+   your survey list and shown. Older SD-card CSVs from the first prototype load too,
    but they have no slope column, so only the **Raw** map shows anything for them.
 4. Tap **Present** for presentation mode: just the two slopes, full screen and
    large, for filming or screen-recording. The ✕ (or Android back) leaves it.
@@ -189,6 +189,6 @@ adb shell run-as com.inorite.sensorbuddy ls files/surveys
 adb exec-out run-as com.inorite.sensorbuddy cat files/surveys/2026-09-17_09-05-07.csv > tools/data/2026-09-17_09-05-07.csv
 ```
 
-The CSV is the rev A column set followed by `ch4_rs_ohm,lpg_rs_ohm,vbat_mv,gps_accuracy_m`
+The CSV is the original column set (from the first prototype's SD-card logs) followed by `ch4_rs_ohm,lpg_rs_ohm,vbat_mv,gps_accuracy_m`
 (see the spec). Note the known gap in the spec: `tools/plot_map.py` currently
 filters on `sats`, which the phone leaves blank.

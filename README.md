@@ -13,45 +13,46 @@ This is a home-built, citizen-science project. It is not a certified safety
 device. It shows *where* gas rises; it does not tell you how much gas there is.
 
 <p align="center">
-  <img src="hardware/phone_board/preview/render_top.png" alt="Picture of the circuit board. The two round sensor positions are on the right-hand edge." height="300">
-  <img src="hardware/enclosure/build/v2_assembly.png" alt="Picture of the 3D-printed case with the board and battery inside." height="300">
+  <img src="hardware/board/preview/render_top.png" alt="Picture of the circuit board. The two round sensor positions are on the right-hand edge." height="300">
+  <img src="hardware/enclosure/build/assembly.png" alt="Picture of the 3D-printed case with the board and battery inside." height="300">
 </p>
 
-## Which version to build
+## The board
 
-**Build rev C.** It is the current design.
+There is one board: [hardware/board](hardware/board/), 66 × 36 mm. It has been
+made by JLCPCB and works (October 2026). Order it with the files in
+[hardware/board/production](hardware/board/production/).
 
-| Version | What it is | Status |
-|---|---|---|
-| **Rev C** | The current board, 60 × 33 mm. Files are in [hardware/phone_board](hardware/phone_board/). | **Build this one.** This exact board has not been manufactured yet. |
-| Rev B | The same circuit on a slightly bigger board (66 × 36 mm). | Built and tested in September 2026. Replaced by rev C. Its files are saved under the git tag [`rev-b`](https://github.com/JamesTwallin/gas_sensor/tree/rev-b/hardware/phone_board). |
-| Rev D | An experiment with cheaper sensors. In [hardware/phone_board_mems](hardware/phone_board_mems/). | A draft. Nothing has been built. |
-| Rev A | The first prototype, which had its own screen, GPS and memory card. In [legacy/rev_a](legacy/rev_a/). | Retired. |
+The **air blade** is a tiny plug-in board that measures airflow and the outside
+air's temperature and humidity. It is not ready to order: the way it attaches to
+the board is being redesigned. The board works without it.
 
-Rev C and rev B are the same circuit. Rev C is just smaller, with the parts
-moved around. So the software and the app work on both, and the tests done on
-rev B still count. Running from the battery has not been properly tested yet.
+[hardware/board_mems](hardware/board_mems/) is a test version of the board with a
+second plug-in for two cheap MEMS gas sensors, to compare them with the Figaro
+sensors. It has not been made.
+
+Older designs (the first prototype, earlier boards and cases) are in
+[archive/](archive/), for reference only.
 
 ## What you need
 
 | Item | Where to get it | Notes |
 |---|---|---|
-| The circuit board | Order from [JLCPCB](https://jlcpcb.com/) using the files in [hardware/phone_board/production](hardware/phone_board/production/). | It arrives with almost every part already soldered on. The [board guide](hardware/phone_board/README.md) lists which options to pick when ordering. |
+| The circuit board | Order from [JLCPCB](https://jlcpcb.com/) using the files in [hardware/board/production](hardware/board/production/). | It arrives with almost every part already soldered on. The [board guide](hardware/board/README.md) lists which options to pick when ordering. |
 | Methane sensor: Figaro **TGS2611-E00** | [RS Components, stock no. 134-6647](https://uk.rs-online.com/web/p/environmental-sensor-ics/1346647) | You solder this on yourself. It has four legs. |
 | LP-gas sensor: Figaro **TGS2610-D00** | RS Components, stock no. 134-6641 (search for it on your country's RS site) | You solder this on yourself too. |
-| Battery | [The Pi Hut: 2000mAh 3.7V LiPo Battery, JST-PH connector](https://thepihut.com/products/2000mah-3-7v-lipo-battery), about £10 | **Check the red and black wires before plugging it in**, see below. Any single-cell 3.7 V LiPo battery works if it has a JST-PH plug and built-in protection. |
+| Battery | EEMB 103454RP, 2000 mAh 3.7 V LiPo with a JST-PH plug (Amazon, eBay or EEMB's own shop) | **Check the red and black wires before plugging it in**, see below. It is the size the case is made for; any single-cell 3.7 V LiPo with a JST-PH plug and built-in protection works outside the case. |
 | USB-C cable | Any | For charging the battery and loading the software. |
 | Android phone | | For the app. An iPhone works only if you build the app yourself. |
-| Case (optional) | 3D-print it from [hardware/enclosure](hardware/enclosure/) | Also needs four M2 × 8 mm and two M2 × 5 mm self-tapping screws. The case fits the rev B board; one for rev C has not been made yet. |
+| Case (optional) | 3D-print it from [hardware/enclosure](hardware/enclosure/) | Also needs four M2 × 8 mm and two M2 × 5 mm self-tapping screws. |
 
 The two sensors together cost roughly $25–30. Not every electronics shop stocks
 them, so use the part names above when searching.
 
 **Battery wires.** Batteries with the same plug are not all wired the same way
-round. The battery from The Pi Hut came with red and black swapped compared to
-what this board expects, and the two metal pins had to be swapped over in the
-plug. A battery plugged in the wrong way round does no damage, but the board
-will not switch on. The [board guide](hardware/phone_board/README.md#before-you-power-it)
+round. Some come with red and black swapped compared to what this board
+expects, and the two metal pins have to be swapped over in the plug. A battery plugged in the wrong way round does no damage, but the board
+will not switch on. The [board guide](hardware/board/README.md#before-you-power-it)
 shows which side is positive.
 
 ## Putting it together
@@ -61,15 +62,18 @@ shows which side is positive.
    notch printed on the board.
 3. **Load the software onto the board.** Install
    [PlatformIO](https://platformio.org/), plug the board into your computer with
-   the USB-C cable, switch the board on, and run these from this folder:
+   the USB-C cable, **switch the board on** (with the switch off, the computer
+   cannot see the board at all, even on USB), and run these from this folder:
 
    ```
    pio run -d firmware/phone_board                    # build
    pio run -d firmware/phone_board --target upload    # load it onto the board
    ```
 
-   If your computer cannot find the board: hold the **BOOT** button, tap
-   **RESET**, let go of **BOOT**, and try again.
+   A new board arrives empty and will not show up properly until it has been
+   loaded once: hold the **BOOT** button, tap **RESET**, let go of **BOOT**, and
+   run the upload again. Press **RESET** afterwards to start it. Use a USB cable
+   that carries data; some only charge.
 4. **Install the app.** On an Android phone, scan this code, or open the
    [direct link](https://expo.dev/artifacts/eas/GfUwoBCFfugQeaA97EXnztzByZKVXR2_-AvwwxxLo4k.apk)
    on the phone. Your phone will ask for permission to install it.
@@ -136,12 +140,14 @@ GitHub.
 app/              the phone app
 firmware/         the software that runs on the board
 hardware/
-  phone_board/        the rev C board: design files and the files to order it
-  phone_board_mems/   the rev D draft
-  enclosure/          the 3D-printed case
+  board/          the board: design files and the files to order it
+  board_mems/     the MEMS sensor test version of the board (not made)
+  air_blade/      the airflow plug-in (being redesigned)
+  mems_blade/     the MEMS sensor plug-in for board_mems (not made)
+  enclosure/      the 3D-printed case
 docs/             how the board and the sensors work
 tools/            scripts that turn recordings into maps and videos
-legacy/           old versions, kept for reference
+archive/          old versions, kept for reference
 ```
 
 ## Licence

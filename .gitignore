@@ -15,13 +15,15 @@ Thumbs.db
 *.mp4
 *.png
 
-# ...but keep the README images and the rev A photos (the *.png rule above is
+# ...but keep the README images and the first prototype's photos (the *.png rule above is
 # for generated maps/plots). Board renders, the enclosure render and the app
 # icons are re-included by the .gitignore next to them.
 !docs/images/
 !docs/images/*.png
-!legacy/rev_a/images/
-!legacy/rev_a/images/*.png
+!docs/images/board/
+!docs/images/board/*.png
+!archive/first_prototype/images/
+!archive/first_prototype/images/*.png
 
 # Python bytecode cache (from the tools/ scripts)
 __pycache__/
@@ -35,6 +37,12 @@ tools/maps/
 # autosave files. The .kicad_pro/.kicad_sch/.kicad_pcb, the lib-tables and lib/
 # are the real design and stay tracked.
 *-backups/
+backups/
+# loose Gerbers: export.py zips them into production/gerbers.zip, which is what JLC takes
+hardware/**/production/gerbers/
+hardware/**/production/panel/gerbers/
+archive/air_blade_first_batch/production/gerbers/
+archive/air_blade_first_batch/production/panel/gerbers/
 fp-info-cache
 *.kicad_prl
 _autosave-*
@@ -47,3 +55,22 @@ legacy/rev_a/carrier_board/#auto_saved_files#
 legacy/rev_a/carrier_board/production/*
 
 tools/bench/*
+
+# Survey logs (anywhere, including the repo root) and anything derived from them
+# (replay logs, event lists, aggregate cells) carry GPS tracks whose start and end
+# points are home. That is personal data: never commit them.
+*.csv
+*.jsonl
+# the survey index, the per-survey results and plots made from the logs
+tools/surveys.json
+docs/report/
+# ...except the board fab files (JLC parts list and placement), which hold no
+# location data.
+!hardware/**/production/bom.csv
+!hardware/**/production/cpl.csv
+!hardware/**/production/panel/bom.csv
+!hardware/**/production/panel/cpl.csv
+!archive/**/production/bom.csv
+!archive/**/production/cpl.csv
+!archive/**/production/panel/bom.csv
+!archive/**/production/panel/cpl.csv

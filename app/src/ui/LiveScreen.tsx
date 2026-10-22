@@ -255,6 +255,8 @@ export function LiveScreen({
         </Box>
       </Box>
 
+      {state.lastMems && <MemsTiles mems={state.lastMems} theme={theme} />}
+
       <Box gap="s">
         <Text variant="eyebrow" paddingLeft="xs">
           Environment
@@ -276,6 +278,34 @@ export function LiveScreen({
           <Tile theme={theme} label="Charge" value={s && s.vbatMv >= 3000 ? String(batteryPercent(s.vbatMv)) : '—'} unit="%" />
           <Tile theme={theme} label="Heater rail" value={state.info.heater_mv ? (state.info.heater_mv / 1000).toFixed(2) : '—'} unit="V" />
         </Box>
+      </Box>
+    </Box>
+  );
+}
+
+/** Rev F MEMS blade: resistance per sensor and the blade's state. Shown only when the board sends Gas2. */
+function MemsTiles({ mems, theme }: { mems: NonNullable<UiState['lastMems']>; theme: Theme }) {
+  const g = mems.gas2;
+  const [aRs, aUnit] = kohm(mems.reading.a.rsOhm);
+  const [bRs, bUnit] = kohm(mems.reading.b.rsOhm);
+  const status = !g.bladeFitted
+    ? 'no blade'
+    : !g.heaterOn
+      ? 'heater off'
+      : !g.warm
+        ? 'warming'
+        : g.burnInDone
+          ? 'ready'
+          : 'burn-in';
+  return (
+    <Box gap="s">
+      <Text variant="eyebrow" paddingLeft="xs">
+        MEMS blade
+      </Text>
+      <Box flexDirection="row" flexWrap="wrap" gap="s">
+        <Tile theme={theme} label={g.anomalyA ? '37BPM (CH4) · anomaly' : '37BPM (CH4)'} value={aRs} unit={aUnit} />
+        <Tile theme={theme} label={g.anomalyB ? 'MiCS-5524 · anomaly' : 'MiCS-5524'} value={bRs} unit={bUnit} />
+        <Tile theme={theme} label="Status" value={status} />
       </Box>
     </Box>
   );

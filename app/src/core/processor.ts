@@ -1,5 +1,5 @@
 // Run-state tracking on the phone, descended from the rev A signal processing
-// (legacy/rev_a/src/main.cpp). Pure, no DOM.
+// (archive/first_prototype/src/main.cpp). Pure, no DOM.
 //
 //   WARMUP      - the heater is settling (heaterWarmupMs, 3 min by default):
 //                 the slope is charted but no spike is flagged. Rev A timed this

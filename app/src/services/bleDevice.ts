@@ -7,8 +7,11 @@
 import type { Device, Subscription } from 'react-native-ble-plx';
 import { base64ToBytes, base64ToUtf8, bytesToBase64 } from '../core/base64';
 import {
+  ANALYSIS_CHAR_UUID,
   CONTROL_CHAR_UUID,
+  EVENT_CHAR_UUID,
   DEFAULT_INFO,
+  GAS2_CHAR_UUID,
   INFO_CHAR_UUID,
   SAMPLE_CHAR_UUID,
   SERVICE_UUID,
@@ -28,6 +31,9 @@ export class BleDeviceLink implements DeviceLink {
   private connected = false;
   private reconnecting = false;
   private monitor: Subscription | null = null;
+  /** Analysis, Event and Gas2 monitors, when the firmware has those characteristics. */
+  private extraMonitors: Subscription[] = [];
+  private hasChar = new Set<string>();
   private disconnectSub: Subscription | null = null;
   /** Control writes need a response unless the characteristic allows fire-and-forget. */
   private writeWithoutResponse = false;
@@ -73,6 +79,7 @@ export class BleDeviceLink implements DeviceLink {
         console.warn('Info read failed, using spec defaults', e);
         this.h.onInfo(DEFAULT_INFO);
       }
+      this.subscribeAnalysis(device);
       this.monitor?.remove();
       this.monitor = device.monitorCharacteristicForService(
         SERVICE_UUID,
@@ -99,10 +106,45 @@ export class BleDeviceLink implements DeviceLink {
     this.onReady();
   }
 
+  /**
+   * Analysis and Event (firmware 1.1.0+). Subscribed before Sample: the board
+   * sends a sample's Analysis just ahead of the Sample itself.
+   */
+  private subscribeAnalysis(device: Device): void {
+    this.removeExtraMonitors();
+    const watch = (uuid: string, handler: ((dv: DataView) => void) | undefined, what: string) => {
+      if (!handler || !this.hasChar.has(uuid.toLowerCase())) return;
+      this.extraMonitors.push(
+        device.monitorCharacteristicForService(SERVICE_UUID, uuid, (error, ch) => {
+          if (error) {
+            if (this.wantConnected) console.warn(`${what} monitor`, error.message);
+            return;
+          }
+          if (!ch?.value) return;
+          try {
+            handler(toDataView(base64ToBytes(ch.value)));
+          } catch (e) {
+            console.warn(`bad ${what} payload`, e);
+          }
+        }),
+      );
+    };
+    watch(ANALYSIS_CHAR_UUID, this.h.onAnalysis?.bind(this.h), 'analysis');
+    watch(EVENT_CHAR_UUID, this.h.onEvent?.bind(this.h), 'event');
+    // Rev F only: sent just after the Sample with the same seq.
+    watch(GAS2_CHAR_UUID, this.h.onGas2?.bind(this.h), 'gas2');
+  }
+
+  private removeExtraMonitors(): void {
+    for (const m of this.extraMonitors) m.remove();
+    this.extraMonitors = [];
+  }
+
   /** The firmware exposes Control as WRITE | WRITE_NR; prefer the cheaper one. */
   private async detectControlWriteMode(device: Device): Promise<void> {
     try {
       const chars = await device.characteristicsForService(SERVICE_UUID);
+      this.hasChar = new Set(chars.map((c) => c.uuid.toLowerCase()));
       const ctrl = chars.find((c) => c.uuid.toLowerCase() === CONTROL_CHAR_UUID.toLowerCase());
       this.writeWithoutResponse = ctrl?.isWritableWithoutResponse ?? false;
     } catch {
@@ -114,6 +156,7 @@ export class BleDeviceLink implements DeviceLink {
     this.connected = false;
     this.monitor?.remove();
     this.monitor = null;
+    this.removeExtraMonitors();
     if (this.wantConnected) void this.scheduleReconnect('link dropped');
     else this.h.onStatus('idle');
   }
@@ -146,6 +189,7 @@ export class BleDeviceLink implements DeviceLink {
     this.wantConnected = false;
     this.monitor?.remove();
     this.monitor = null;
+    this.removeExtraMonitors();
     this.disconnectSub?.remove();
     this.disconnectSub = null;
     if (this.connected) {

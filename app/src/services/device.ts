@@ -6,6 +6,11 @@ export type LinkStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 
 
 export interface LinkHandlers {
   onSample(bytes: DataView): void;
+  /** Anomaly detector packets (firmware 1.1.0+); not every link produces them. */
+  onAnalysis?(bytes: DataView): void;
+  onEvent?(bytes: DataView): void;
+  /** Rev F MEMS blade packet (Gas2); only rev F boards produce it. */
+  onGas2?(bytes: DataView): void;
   onInfo(info: DeviceInfo): void;
   onStatus(status: LinkStatus, detail?: string): void;
 }

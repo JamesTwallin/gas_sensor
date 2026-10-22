@@ -6,9 +6,9 @@ here for provenance and to inform the firmware. Figures cited are from the
 documents. Where a value is read off a graph rather than a table it is marked
 approximate.
 
-> **Which board this describes.** These notes were written for the rev A
+> **Which board this describes.** These notes were written for the first
 > prototype, which used the NGM2611 / LPM2610 *modules*. The current board
-> (rev B / C, [phone_board.md](phone_board.md)) mounts the same TGS2611-E00 and
+> ([phone_board.md](phone_board.md)) mounts the same TGS2611-E00 and
 > TGS2610-D00 elements bare, with its own load resistor and an SHT40 instead of
 > a BME280. Everything below about the elements (part spread, sensitivity shape,
 > temperature and humidity, warm-up, field cautions) applies to it. What

@@ -1,0 +1,50 @@
+{
+ "U1": {
+  "x": 4.23,
+  "y": 1.61,
+  "rot": 90,
+  "matched": 4,
+  "same_number": 4,
+  "mean_err": 0.162,
+  "lcsc_pads": 5,
+  "board_pads": 4,
+  "lcsc": "C7461852",
+  "lcsc_footprint": "DFN-4_L1.5-W1.5-P0.80-TL-EP",
+  "kicad_x": 4.15,
+  "kicad_y": 1.75,
+  "kicad_rot": 90.0,
+  "ok": true
+ },
+ "C1": {
+  "x": 4.15,
+  "y": 3.9,
+  "rot": 90,
+  "matched": 2,
+  "same_number": 2,
+  "mean_err": 0.06,
+  "lcsc_pads": 2,
+  "board_pads": 2,
+  "lcsc": "C1525",
+  "lcsc_footprint": "C0402",
+  "kicad_x": 4.15,
+  "kicad_y": 3.9,
+  "kicad_rot": 90.0,
+  "ok": true
+ },
+ "RT1": {
+  "x": 1.3,
+  "y": 1.6,
+  "rot": 90,
+  "matched": 2,
+  "same_number": 2,
+  "mean_err": 0.075,
+  "lcsc_pads": 2,
+  "board_pads": 2,
+  "lcsc": "C152577",
+  "lcsc_footprint": "R0603",
+  "kicad_x": 1.3,
+  "kicad_y": 1.6,
+  "kicad_rot": 90.0,
+  "ok": true
+ }
+}

@@ -9,7 +9,7 @@
 import { AppState, NativeModules, type AppStateStatus } from 'react-native';
 import { bridgeUrl } from './core/bridge';
 import { ChartBuffer, type ChartPoint } from './core/chartData';
-import { formatCsvRow, type GpsFix } from './core/csv';
+import { formatCsvRow, type CsvRowInput, type GpsFix } from './core/csv';
 import {
   NO_CALIBRATION,
   TGS2610,
@@ -27,11 +27,17 @@ import {
   encodeIdentify,
   encodeSetInterval,
   encodeSetLed,
+  parseAnalysis,
+  parseEvent,
+  parseGas2,
   parseSample,
+  type Analysis,
   type DeviceInfo,
+  type EventFingerprint,
+  type Gas2,
   type Sample,
 } from './core/protocol';
-import { rsOhm, vrlFromTap } from './core/sensor';
+import { memsReading, rsOhm, vrlFromTap, type MemsReading } from './core/sensor';
 import type { AppSettings } from './core/settings';
 import { bleAvailable, scanForSensors, type ScanHandle } from './services/ble';
 import { BleDeviceLink } from './services/bleDevice';
@@ -71,6 +77,11 @@ export interface UiState {
   lastSample: Sample | null;
   lastOut: ProcessorOutput | null;
   lastRs: { ch4: number | null; lpg: number | null };
+  /**
+   * Rev F MEMS blade: the latest Gas2 packet and the VRL/Rs derived from it;
+   * null on boards without Gas2. No ppm: there is no calibration for these.
+   */
+  lastMems: { gas2: Gas2; reading: MemsReading } | null;
   /** Datasheet-curve concentration estimates (core/ppm.ts). */
   lastPpm: { ch4: number | null; lpg: number | null };
   /** Ro calibration for the connected board (datasheet-typical Ro where null). */
@@ -135,6 +146,19 @@ export class AppController {
   private link: DeviceLink | null = null;
   private scan: ScanHandle | null = null;
   private lastSeq: number | null = null;
+  /** Latest Analysis packet: it arrives just before the Sample with the same seq. */
+  private lastAnalysis: Analysis | null = null;
+  /** A closed event's fingerprint, waiting to be written on the next CSV row. */
+  private pendingEvent: EventFingerprint | null = null;
+  /**
+   * Gas2 arrives just after the Sample with the same seq, so once a link has
+   * shown it sends Gas2, each CSV row waits here for its Gas2 packet. It is
+   * written when that packet arrives, or without MEMS cells when anything else
+   * (the next Sample, a Gas2 for another seq, stop, reconnect) comes first.
+   */
+  private pendingRow: { seq: number; row: CsvRowInput } | null = null;
+  /** This link has sent at least one Gas2 packet (rev F). */
+  private gas2Seen = false;
   private lastLedKey = '';
   private spike = { ch4: new SpikeDetector(), lpg: new SpikeDetector() };
   /** Device ms of the last sample flagged per channel, for burst grouping. */
@@ -170,6 +194,7 @@ export class AppController {
       lastSample: null,
       lastOut: null,
       lastRs: { ch4: null, lpg: null },
+      lastMems: null,
       lastPpm: { ch4: null, lpg: null },
       calibration: { ...NO_CALIBRATION },
       spikes: IDLE_SPIKES,
@@ -239,6 +264,7 @@ export class AppController {
     this.scan?.stop();
     void this.link?.disconnect();
     void this.gps.stop();
+    this.flushPendingRow();
     void this.recorder.stop();
     void setKeepAwake(false);
     disposeBeeper();
@@ -263,6 +289,13 @@ export class AppController {
   // ------------------------------------------------------------ device
   private handlers: LinkHandlers = {
     onSample: (dv) => this.handleSample(dv),
+    onAnalysis: (dv) => {
+      this.lastAnalysis = parseAnalysis(dv);
+    },
+    onEvent: (dv) => {
+      this.pendingEvent = parseEvent(dv);
+    },
+    onGas2: (dv) => this.handleGas2(dv),
     onInfo: (info) => this.patch({ info }),
     onStatus: (linkStatus, detail) => {
       this.patch({ linkStatus, linkDetail: detail ?? '', linkName: this.link?.name ?? null });
@@ -273,6 +306,10 @@ export class AppController {
   private onLinkReady = (): void => {
     this.lastLedKey = ''; // resend LED state after every (re)connect
     this.lastSeq = null;
+    this.lastAnalysis = null;
+    this.pendingEvent = null;
+    this.flushPendingRow();
+    this.gas2Seen = false;
     const name = this.link?.name;
     if (name) {
       void loadCalibration(name).then((calibration) => {
@@ -340,6 +377,8 @@ export class AppController {
     this.lastSpikeT = { ch4: -Infinity, lpg: -Infinity };
     this.patch({ spikes: IDLE_SPIKES }, false);
     this.lastSeq = null;
+    this.flushPendingRow();
+    this.gas2Seen = false;
     if (l instanceof SimDeviceLink) l.onLed = (rgb) => this.patch({ simLed: rgb });
     this.link = l;
     this.patch({
@@ -348,6 +387,7 @@ export class AppController {
       linkName: l.name,
       lastOut: null,
       lastSample: null,
+      lastMems: null,
       droppedPackets: 0,
       badPackets: 0,
       simLed: l.kind === 'sim' ? [0, 0, 0] : null,
@@ -473,29 +513,33 @@ export class AppController {
     if (this.recorder.recording) {
       // The survey map's heatmap: mean CH4 VRL and steepest CH4 rise per fix.
       this.track.addSample(ch4Mv, sp.ch4.slopeMvPerS, sp.ch4.spike || sp.lpg.spike);
-      this.recorder.add(
-        formatCsvRow({
-          millisSinceBoot: s.msSinceBoot,
-          state: out.state,
-          ch4VoutMv: ch4Mv,
-          ch4BaselineMv: out.ch4.baselineMv,
-          lpgVoutMv: lpgMv,
-          lpgBaselineMv: out.lpg.baselineMv,
-          tempC: s.tempC,
-          humidityPct: s.humidityPct,
-          pressureHpa: s.pressureHpa,
-          phoneTimeMs,
-          gps: this.gps.latest,
-          ch4RsOhm: rs.ch4,
-          lpgRsOhm: rs.lpg,
-          vbatMv: s.vbatMv,
-          ch4PpmEst: ppm.ch4,
-          lpgPpmEst: ppm.lpg,
-          ch4SlopeMvPerS: sp.ch4.slopeMvPerS,
-          lpgSlopeMvPerS: sp.lpg.slopeMvPerS,
-          spike: spikeText,
-        }),
-      );
+      const row: CsvRowInput = {
+        millisSinceBoot: s.msSinceBoot,
+        state: out.state,
+        ch4VoutMv: ch4Mv,
+        ch4BaselineMv: out.ch4.baselineMv,
+        lpgVoutMv: lpgMv,
+        lpgBaselineMv: out.lpg.baselineMv,
+        tempC: s.tempC,
+        humidityPct: s.humidityPct,
+        pressureHpa: s.pressureHpa,
+        phoneTimeMs,
+        gps: this.gps.latest,
+        ch4RsOhm: rs.ch4,
+        lpgRsOhm: rs.lpg,
+        vbatMv: s.vbatMv,
+        ch4PpmEst: ppm.ch4,
+        lpgPpmEst: ppm.lpg,
+        ch4SlopeMvPerS: sp.ch4.slopeMvPerS,
+        lpgSlopeMvPerS: sp.lpg.slopeMvPerS,
+        spike: spikeText,
+        analysis: this.lastAnalysis?.seq === s.seq ? this.lastAnalysis : null,
+        event: this.pendingEvent,
+      };
+      this.pendingEvent = null;
+      this.flushPendingRow();
+      if (this.gas2Seen) this.pendingRow = { seq: s.seq, row };
+      else this.recorder.add(formatCsvRow(row));
     }
 
     if (settings.driveLed && this.link) {
@@ -520,6 +564,35 @@ export class AppController {
       },
       false,
     );
+  }
+
+  /** Rev F MEMS packet: completes the row of the Sample with the same seq. */
+  private handleGas2(dv: DataView): void {
+    let g: Gas2;
+    try {
+      g = parseGas2(dv);
+    } catch (e) {
+      this.patch({ badPackets: this.state.badPackets + 1 }, false);
+      console.warn(e);
+      return;
+    }
+    this.gas2Seen = true;
+    const mems = { gas2: g, reading: memsReading(g) };
+    const p = this.pendingRow;
+    if (p && p.seq === g.seq) {
+      this.pendingRow = null;
+      if (this.recorder.recording) this.recorder.add(formatCsvRow({ ...p.row, mems }));
+    } else {
+      this.flushPendingRow();
+    }
+    this.patch({ lastMems: mems, recRows: this.recorder.rows }, false);
+  }
+
+  /** Write a row still waiting for its Gas2 packet, with the MEMS cells blank. */
+  private flushPendingRow(): void {
+    const p = this.pendingRow;
+    this.pendingRow = null;
+    if (p && this.recorder.recording) this.recorder.add(formatCsvRow(p.row));
   }
 
   identify(): void {
@@ -581,6 +654,7 @@ export class AppController {
   async toggleRecording(): Promise<void> {
     try {
       if (this.recorder.recording) {
+        this.flushPendingRow();
         const name = await this.recorder.stop();
         this.toast(`Saved ${name}`);
       } else {

@@ -2,4 +2,8 @@
 build/*.stl
 build/*.scad
 # keep the README's render (the repo root ignores *.png)
-!build/v2_assembly.png
+!build/assembly.png
+!build/face.png
+!build/face_mems.png
+!build/car_mounted.png
+!build/car_adapter.png

@@ -1,5 +1,5 @@
-// Phone-companion board firmware (rev B and rev C, which share one circuit): a
-// thin BLE sampler.
+// Phone-companion board firmware (hardware/board, and the MEMS test rig
+// hardware/board_mems with HW_MEMS): a thin BLE sampler.
 //
 // docs/phone_board.md is the source of truth for everything this file
 // implements (pin map, ADS1115 channels, BLE UUIDs, packet layout, Info JSON,
@@ -7,10 +7,10 @@
 //
 // What it does, and deliberately does not do
 // ------------------------------------------
-// Rev A ran the whole instrument on the board (baseline, classifier, OLED,
-// GNSS, SD). Rev B hands all of that to the phone app. The firmware only:
-//   1. reads the two bare Figaro sensor load-resistor taps, VBAT and the heater
-//      rail on the ADS1115, and temperature/humidity on the SHT40 (there is no
+// The phone app does the baseline, classification, display, position and storage.
+// The firmware only:
+//   1. reads the two bare Figaro sensor load-resistor taps on the ADS1115, VBAT and
+//      the heater rail on the ESP32's ADC, and temperature/humidity on the SHT40 (there is no
 //      pressure sensor on the board; the app uses the phone's barometer);
 //   2. averages each ADC channel over the sample interval (default 250 ms);
 //   3. sends one 20-byte notification per interval to a subscribed phone, and
@@ -36,12 +36,10 @@
 // for several conversions in a row it is marked lost and re-probed every few
 // seconds.
 //
-// Whenever the ADS1115 is absent (or lost) the CH4/LPG taps are read instead by
-// the ESP32's own ADC on the 1k fallback pins (GPIO1/GPIO2, oversampled,
-// calibrated analogReadMilliVolts) and flag bit3 is cleared so the app knows the
-// resolution dropped. VBAT and the heater rail are only wired to the ADS1115,
-// so in fallback vbat reads 0 (unknown) and the heater check (bit4) is not
-// asserted.
+// Whenever the ADS1115 is absent (or lost) there is no backup reading of the
+// CH4/LPG taps: they read 0 and flag bit3 is cleared. VBAT and the heater rail
+// are on the ESP32's own ADC (GPIO1/GPIO2, oversampled, calibrated
+// analogReadMilliVolts), so they and the heater check (bit4) keep working.
 //
 // Heaters: HTR_EN (GPIO7) is the boost converter's enable and has a 100k
 // pull-down on the board, so the heaters stay off until setup() drives it HIGH.
@@ -63,8 +61,47 @@
 // notifications enabled on the Sample characteristic. BLE callbacks run on the
 // NimBLE host task, so everything they share with loop() is std::atomic.
 //
-// LED (WS2812B/SK6812 on GPIO38, standard GRB -- no R/G swap unlike rev A's
-// onboard LED): slow dim blue breathe while advertising; solid dim cyan once
+// Anomaly detector (lib/anomaly, docs/REPORT.md)
+// ------------------------------------------------
+// The one exception to "no processing here": each sample also goes through the
+// gas anomaly detector, which predicts each gas channel from temperature and
+// humidity (and airflow / CO when fitted) and flags departures from that
+// prediction. Its per-sample result goes out on the Analysis characteristic just
+// before the Sample notification, and a closed event's fingerprint on the Event
+// characteristic. The app logs both. The detector runs once the heaters have been
+// on for WARMUP_MS with good ADS1115 and T/RH readings.
+//
+// Optional hardware (docs/HARDWARE.md), selected with build flags in
+// platformio.ini, off by default:
+//   HW_AIRFLOW      the air blade's heated thermistor, on the ADS1115's AIN2.
+//   HW_AIRFLOW_REF  an unheated reference thermistor on AIN3 for the ambient
+//                   temperature.
+//   HW_CO           Winsen ZE15-CO (or ZE07-CO) electrochemical CO module on UART (TP2 =
+//                   GPIO44 receives its TX), powered from +5V_HTR (TP6).
+//   HW_MEMS         the MEMS test rig (hardware/board_mems): the board plus a plug-in
+//                   MEMS blade on J5 with two MEMS gas sensors, mems_a on the first
+//                   ADS1115's AIN3 and mems_b on the second's AIN3 (both at +/-2.048 V).
+//                   Built with ANOM_NCH = 4, so the detector runs four channels. The blade is detected by its tap voltages (no
+//                   blade: the 1M pull-ups lift both past full scale). Its heaters
+//                   (GPIO12) come on MEMS_STAGGER_MS after the Figaro heaters, only with
+//                   a blade fitted, and the MEMS channels count once MEMS_WARMUP_MS has
+//                   passed. Extra readings go out on the Gas2 characteristic and at the
+//                   end of the CSV line. Build env `board_mems`.
+// The board (hardware/board) reads VBAT and the heater rail on GPIO1 / GPIO2, and a
+// second ADS1115 (0x49) reads each heater's current through a 0.5 ohm shunt and the
+// 3V3 rail. Build env `board`.
+// The on-board SHT40 reads air inside the case. The air blade (hardware/air_blade)
+// carries a second SHT40 (0x45 or 0x46) out in the air at the inlet: when it answers, it
+// supplies "the" temperature and humidity. Without it, HW_AIRFLOW_REF uses the
+// reference thermistor (out in the air) for the temperature and the on-board SHT40's
+// water content (absolute humidity, unchanged by the case warming the air),
+// re-expressed as RH at that temperature. Either way the on-board readings are still
+// logged as the case reading.
+// The model only uses airflow or CO once ANOM_USE_AIRFLOW / ANOM_USE_CO are set
+// and refitted coefficients are in lib/anomaly/anomaly_config.h; until then the
+// readings are logged only.
+//
+// LED (WS2812B/SK6812 on GPIO38, standard GRB): slow dim blue breathe while advertising; solid dim cyan once
 // connected until the app sends a colour (opcode 0x03); opcode 0x02 blinks
 // white three times. App colours are scaled down (LED_APP_SCALE) to save
 // battery -- the app's 255 is our LED_APP_SCALE.
@@ -78,14 +115,36 @@
 #include <NimBLEDevice.h>
 #include <Adafruit_ADS1X15.h>
 #include <Adafruit_SHT4x.h>
+#include <Preferences.h>
 
-static const char *FW_VERSION = "1.0.0";
-static const char *BOARD_ID = "rev-b";
+#include "anomaly.h"
+
+#ifndef HW_AIRFLOW
+#define HW_AIRFLOW 0
+#endif
+#ifndef HW_AIRFLOW_REF
+#define HW_AIRFLOW_REF 0
+#endif
+#ifndef HW_CO
+#define HW_CO 0
+#endif
+#ifndef HW_MEMS
+#define HW_MEMS 0
+#endif
+#if HW_MEMS && ANOM_NCH != 4
+#error "HW_MEMS needs ANOM_NCH=4"
+#endif
+#if HW_MEMS && HW_AIRFLOW_REF
+#error "HW_MEMS uses the ADS1115's AIN3, which HW_AIRFLOW_REF wants"
+#endif
+
+static const char *FW_VERSION = "1.1.0";
+// Sent in the Info JSON and the CSV banner; the app, tools/serial_bridge.py and logged
+// surveys know these values, so they stay as they are.
+static const char *BOARD_ID = HW_MEMS ? "rev-f" : "rev-e";
 
 // ---- Pins (docs/phone_board.md, ESP32-S3-MINI-1-N8 pin map) -----------------
 static const uint8_t PIN_BOOT_BUTTON = 0;   // active low, tact switch to GND
-static const uint8_t PIN_CH4_ADC_FB = 1;    // fallback CH4 tap via 1k (ADC1)
-static const uint8_t PIN_LPG_ADC_FB = 2;    // fallback LPG tap via 1k (ADC1)
 static const uint8_t PIN_CHG_N = 5;         // BQ24073 CHG, low = charging
 static const uint8_t PIN_PGOOD_N = 6;       // BQ24073 PGOOD, low = USB power good
 static const uint8_t PIN_HTR_EN = 7;        // 100k pull-down: drive HIGH = heaters on, LOW = off
@@ -93,6 +152,11 @@ static const uint8_t PIN_I2C_SDA = 8;
 static const uint8_t PIN_I2C_SCL = 9;
 static const uint8_t PIN_ADS_RDY = 10;      // ADS1115 ALERT/RDY, active low
 static const uint8_t PIN_LED_DIN = 38;      // WS2812-class status LED
+static const uint8_t PIN_VBAT_ADC = 1;      // VBAT / 2 (1M/1M + 100 nF)
+static const uint8_t PIN_HTR_ADC = 2;       // +5V_HTR / 2 (100k/100k + 100 nF)
+static const uint8_t PIN_CO_RX = 44;        // HW_CO: RXD0 test pad TP2 <- module TX
+static const uint8_t PIN_CO_TX = 43;        // TXD0 test pad TP1 (left unconnected)
+static const uint8_t PIN_MEMS_HTR_EN = 12;  // MEMS rig: MEMS heater P-FET, HIGH = on, 100k pull-down
 
 // ---- I2C devices ---------------------------------------------------------------
 static const uint32_t I2C_CLOCK_HZ = 400000;  // both parts are fast-mode capable
@@ -103,10 +167,44 @@ static const uint8_t ADS1115_ADDR = 0x48;
 static const uint32_t RL_OHM = 40000;      // RLa + RLb (20k + 20k)
 static const float TAP_RATIO = 2.0f;       // VRL = 2 x tap
 static const uint16_t VC_MV = 5000;        // nominal sensor circuit voltage
-static const float VBAT_RATIO = 2.0f;      // 100k/100k on AIN2
-static const float HEATER_RATIO = 2.0f;    // 100k/100k on AIN3
+static const float VBAT_RATIO = 2.0f;      // 1M/1M on GPIO1
+static const float HEATER_RATIO = 2.0f;    // 100k/100k on GPIO2
+
+// ---- second ADS1115 (heater currents, 3V3 rail) -----------------------
+static const uint8_t ADS2_ADDR = 0x49;           // ADDR to VDD
+static const float HEATER_SHUNT_OHM = 0.5f;      // R22 (CH4) / R25 (LPG), low side
+static const float ADS2_SHUNT_MV_PER_COUNT = 0.0078125f;  // GAIN_SIXTEEN, +/-0.256 V
+static const float ADS2_RAIL_MV_PER_COUNT = 0.125f;       // GAIN_ONE, +/-4.096 V
+static const float RAIL_RATIO = 2.0f;            // 100k/100k on AIN2
 static const uint16_t HEATER_MIN_MV = 4800;  // bit4 if outside this window
 static const uint16_t HEATER_MAX_MV = 5200;
+
+// ---- MEMS rig: MEMS blade (two MEMS gas sensors on J5) ------------------------------
+// Each sensor: +3V3 -> Rs -> node N -> R -> tap T -> R -> GND (RL = 2R); the ADC reads
+// T, which also has a 1M pull-up to +3V3 on the main board (blade detection). Rs is
+// solved exactly with the pull-up (memsRsOhm). R: mems_a (SY-CH4-37BPM) 10k, mems_b
+// (MiCS-5524) 100k.
+static const float MEMS_A_R_OHM = 10000.0f;
+static const float MEMS_B_R_OHM = 100000.0f;
+static const float MEMS_PULLUP_OHM = 1000000.0f;
+static const float MEMS_TAP_RATIO = 2.0f;           // VRL = 2 x tap, as for the Figaros
+static const float ADS_MEMS_MV_PER_COUNT = 0.0625f;  // GAIN_TWO, +/-2.048 V
+static const float MEMS_VC_FALLBACK_MV = 3300.0f;   // when the 3V3 rail is not measured
+// No blade: the pull-up lifts the tap past GAIN_TWO's full scale. A fitted blade gives
+// at most ~1.73 V (mems_b, Rs -> 0). Fitted <=> both taps below this.
+static const float MEMS_BLADE_MAX_MV = 1850.0f;
+#ifndef MEMS_STAGGER_MS
+#define MEMS_STAGGER_MS 5000  // MEMS heaters on this long after the Figaro boost
+#endif
+#ifndef MEMS_WARMUP_MS
+#define MEMS_WARMUP_MS 3600000  // the 37BPM datasheet asks for >= 60 min before measuring
+#endif
+#ifndef MEMS_BURNIN_H
+#define MEMS_BURNIN_H 48  // cumulative heater-on hours before the MEMS data is trusted
+#endif
+static const uint32_t MEMS_BURNIN_SAVE_MS = 600000;  // NVS write at most every 10 min
+static const uint32_t ADS2_MEMS_CONV_US = 4600;      // 250 SPS conversion, polled after this
+static const uint32_t ADS2_MEMS_TIMEOUT_US = 20000;
 
 // ---- Heater turn-on happens first thing in setup(), before the radio, I2C
 // and USB are up and with the CPU at 80 MHz, because on USB power alone the
@@ -137,6 +235,30 @@ static const uint32_t ADS_REPROBE_MS = 5000;
 // ---- Fallback ESP32 ADC --------------------------------------------------------
 static const uint8_t FALLBACK_OVERSAMPLE = 32;
 
+// ---- Anomaly detector ------------------------------------------------------------
+// Same warm-up as the app's heaterWarmupMs: no detection while the elements settle.
+static const uint32_t WARMUP_MS = 180000;
+
+// ---- Airflow thermistor (docs/HARDWARE.md) ----------------------------------------
+// Heated thermistor: the air blade carries a Murata NCP18XQ102 (1k, B25/50 3650 K),
+// fed through 1k from +3V3: about 2.7 mW, roughly 1 K above the air. A hand-wired cheap
+// 1k bead works the same; set beta_k from its listing (it barely changes the index).
+// The survey analysis (docs/REPORT.md 3) found a slow bead does as well as a fast one.
+// For the Amphenol BR16PA202K instead: series 3900, r25 2000, beta about 3500.
+static const anom_thermistor AIRFLOW_BEAD_DEFAULT = {
+    /*supply_mv*/ 3300.0f, /*series_ohm*/ 1000.0f, /*r25_ohm*/ 1000.0f,
+    /*beta_k*/ 3650.0f, /*g_still_mw_k*/ 0.0f, /*min_rise_k*/ 0.2f};
+// Reference: TDK B57540G1104F000 (100k, B25/100 4092 K) with 220k from +3V3.
+static const float REF_SERIES_OHM = 220000.0f;
+static const float REF_R25_OHM = 100000.0f;
+static const float REF_BETA_K = 4092.0f;
+static const uint8_t AIRFLOW_OVERSAMPLE = 64;
+static const uint8_t AIRFLOW_CAL_DEFAULT_S = 60;
+
+// ---- CO module (Winsen ZE15-CO / ZE07-CO, active upload, 9600 8N1, 1 frame/s) ----
+static const uint32_t CO_BAUD = 9600;
+static const uint32_t CO_STALE_MS = 3000;  // no valid frame for this long = missing
+
 // ---- Sample interval (Control opcode 0x01 range) -----------------------------
 static const uint16_t DEFAULT_INTERVAL_MS = 250;
 static const uint16_t MIN_INTERVAL_MS = 100;
@@ -150,8 +272,19 @@ static const char *UUID_SERVICE = "6d1a0001-8f3e-4b8a-9c57-2f6c0e3a7b10";
 static const char *UUID_SAMPLE = "6d1a0002-8f3e-4b8a-9c57-2f6c0e3a7b10";
 static const char *UUID_INFO = "6d1a0003-8f3e-4b8a-9c57-2f6c0e3a7b10";
 static const char *UUID_CONTROL = "6d1a0004-8f3e-4b8a-9c57-2f6c0e3a7b10";
-static const uint8_t PROTO_VERSION = 1;
+static const char *UUID_ANALYSIS = "6d1a0005-8f3e-4b8a-9c57-2f6c0e3a7b10";
+static const char *UUID_EVENT = "6d1a0006-8f3e-4b8a-9c57-2f6c0e3a7b10";
+#if HW_MEMS
+static const char *UUID_GAS2 = "6d1a0007-8f3e-4b8a-9c57-2f6c0e3a7b10";  // MEMS rig only
+#endif
+static const uint8_t ANALYSIS_VERSION = 1;
+static const size_t ANALYSIS_PACKET_LEN = 20;
+static const size_t EVENT_PACKET_LEN = 20;
+static const uint8_t PROTO_VERSION = 2;   // Info JSON "proto" (2: Gas2 may exist)
+static const uint8_t SAMPLE_VERSION = 1;  // Sample packet byte 0, unchanged since proto 1
 static const size_t SAMPLE_PACKET_LEN = 20;
+static const uint8_t GAS2_VERSION = 1;
+static const size_t GAS2_PACKET_LEN = 20;
 // Requested connection parameters (units: 1.25 ms, 1.25 ms, events, 10 ms).
 static const uint16_t CONN_MIN_INTERVAL = 36;  // 45 ms
 static const uint16_t CONN_MAX_INTERVAL = 60;  // 75 ms
@@ -161,6 +294,7 @@ static const uint16_t CONN_TIMEOUT = 500;      // 5 s
 static const uint8_t OP_SET_INTERVAL = 0x01;
 static const uint8_t OP_IDENTIFY = 0x02;
 static const uint8_t OP_SET_LED = 0x03;
+static const uint8_t OP_CALIBRATE_AIRFLOW = 0x04;
 
 // Sentinels for missing environment values (sample packet).
 static const int16_t TEMP_MISSING = INT16_MIN;  // 0x8000
@@ -197,9 +331,24 @@ static std::atomic<bool> notifyEnabled{false};
 static std::atomic<bool> identifyRequested{false};
 static std::atomic<uint32_t> appLedColour{0};  // 0x01RRGGBB when set, 0 when not
 static std::atomic<uint16_t> lastHeaterMv{0};   // for Info JSON, 0 = unknown
+static std::atomic<uint8_t> calibrateRequestS{0};  // opcode 0x04: seconds, 0 = none
+static std::atomic<float> airflowGStill{0.0f};     // still-air conductance, mW/K
 
 static NimBLECharacteristic *sampleChar = nullptr;
 static NimBLECharacteristic *infoChar = nullptr;
+// Where "the" temperature and humidity come from (Info JSON "t_src"): 0 the on-board
+// SHT40 (case air), 1 the reference thermistor + case humidity, 2 the air blade's SHT40.
+static std::atomic<uint8_t> tSrcFlag{0};
+static NimBLECharacteristic *analysisChar = nullptr;
+static NimBLECharacteristic *eventChar = nullptr;
+static std::atomic<bool> analysisNotify{false};
+static std::atomic<bool> eventNotify{false};
+#if HW_MEMS
+static NimBLECharacteristic *gas2Char = nullptr;
+static std::atomic<bool> gas2Notify{false};
+static std::atomic<uint8_t> memsBladeFlag{0};   // Info JSON "mems"
+static std::atomic<uint32_t> memsBurnH{0};      // Info JSON "mems_burnin_h"
+#endif
 static char deviceName[16];
 
 // =================================================================================
@@ -208,20 +357,135 @@ static char deviceName[16];
 static Adafruit_ADS1115 ads;
 static Adafruit_SHT4x sht4;
 static bool shtReady = false;
+// Air blade: a second SHT40 on the same bus, out in the air at the inlet. Either
+// an SHT40-BD1B (0x45) or an SHT40-CD1B (0x46), whichever JLC had in stock; never an
+// AD1B, which is 0x44 like the on-board one. Probed at start-up in that order.
+// The Adafruit library only talks to 0x44, so it is read directly (Sensirion: command
+// 0xF6 = medium precision, about 5 ms; 6 bytes back, each word followed by a CRC-8).
+static const uint8_t SHT_BLADE_ADDRS[] = {0x45, 0x46};
+static uint8_t shtBladeAddr = 0x45;  // the one that answered
+static bool shtBladeReady = false;
+
+static uint8_t sht4Crc(const uint8_t *d) {
+  uint8_t crc = 0xFF;
+  for (int i = 0; i < 2; i++) {
+    crc ^= d[i];
+    for (int b = 0; b < 8; b++) crc = (crc & 0x80) ? (uint8_t)((crc << 1) ^ 0x31) : (uint8_t)(crc << 1);
+  }
+  return crc;
+}
+
+static bool readBladeSht(float *t, float *h) {
+  Wire.beginTransmission(shtBladeAddr);
+  Wire.write(0xF6);
+  if (Wire.endTransmission() != 0) return false;
+  delay(6);
+  if (Wire.requestFrom((int)shtBladeAddr, 6) != 6) return false;
+  uint8_t b[6];
+  for (int i = 0; i < 6; i++) b[i] = Wire.read();
+  if (sht4Crc(b) != b[2] || sht4Crc(b + 3) != b[5]) return false;
+  *t = -45.0f + 175.0f * (float)((b[0] << 8) | b[1]) / 65535.0f;
+  float rh = -6.0f + 125.0f * (float)((b[3] << 8) | b[4]) / 65535.0f;
+  *h = rh < 0.0f ? 0.0f : (rh > 100.0f ? 100.0f : rh);
+  return true;
+}
 
 static const uint16_t ADS_MUX[4] = {
     ADS1X15_REG_CONFIG_MUX_SINGLE_0,  // AIN0 CH4 tap
     ADS1X15_REG_CONFIG_MUX_SINGLE_1,  // AIN1 LPG tap
-    ADS1X15_REG_CONFIG_MUX_SINGLE_2,  // AIN2 VBAT / 2
-    ADS1X15_REG_CONFIG_MUX_SINGLE_3,  // AIN3 +5V_HTR / 2
+    ADS1X15_REG_CONFIG_MUX_SINGLE_2,  // AIN2 heated thermistor
+    ADS1X15_REG_CONFIG_MUX_SINGLE_3,  // AIN3 reference thermistor (or MEMS sensor A)
 };
-enum AdsChannel { ADS_CH4 = 0, ADS_LPG = 1, ADS_VBAT = 2, ADS_HEATER = 3 };
+enum AdsChannel { ADS_CH4 = 0, ADS_LPG = 1 };
+static const int ADS_TH_HOT = 2;
+static const int ADS_TH_REF = 3;
+// MEMS rig: AIN3 reads the MEMS blade's sensor A tap instead (GAIN_TWO).
+static const int ADS_MEMS_A = 3;
 
 // Sum of raw counts per channel since the last sample was emitted.
 struct AdsAccumulator {
   int32_t sum;
   uint16_t count;
 };
+
+static Adafruit_ADS1115 ads2;
+static bool ads2Ok = false;
+
+struct Ads2Reading {
+  float ch4HtrMa, lpgHtrMa, railMv;  // NAN when unknown
+  float memsBMv;                     // MEMS rig: window mean of the mems_b tap, NAN when unknown
+};
+
+#if HW_MEMS
+// MEMS rig: the mems_b tap (AIN3) is converted in the background between samples, 250 SPS
+// single-shot like the first ADS1115, and averaged over the sample window like the
+// Figaro taps. readAds2() takes the chip over once per sample, so it first lets any
+// conversion in progress finish (a new single-shot request is ignored mid-conversion).
+static bool memsBBusy = false;
+static uint32_t memsBStartUs = 0;
+static AdsAccumulator memsBAcc = {0, 0};
+
+static void collectMemsB() {
+  int16_t raw = ads2.getLastConversionResults();
+  if (raw < 0) raw = 0;
+  memsBAcc.sum += raw;
+  memsBAcc.count++;
+}
+
+static void serviceMemsB() {
+  if (!ads2Ok) return;
+  if (!memsBBusy) {
+    ads2.setGain(GAIN_TWO);
+    ads2.setDataRate(RATE_ADS1115_250SPS);
+    ads2.startADCReading(ADS1X15_REG_CONFIG_MUX_SINGLE_3, /*continuous=*/false);
+    memsBStartUs = micros();
+    memsBBusy = true;
+    return;
+  }
+  uint32_t elapsedUs = micros() - memsBStartUs;
+  if (elapsedUs < ADS2_MEMS_CONV_US) return;
+  if (ads2.conversionComplete()) {
+    collectMemsB();
+    memsBBusy = false;
+  } else if (elapsedUs >= ADS2_MEMS_TIMEOUT_US) {
+    memsBBusy = false;  // lost conversion: start another
+  }
+}
+
+// Let a conversion in progress finish and keep it, so the chip is idle.
+static void finishMemsB() {
+  if (!memsBBusy) return;
+  while (micros() - memsBStartUs < ADS2_MEMS_TIMEOUT_US) {
+    if (ads2.conversionComplete()) {
+      collectMemsB();
+      break;
+    }
+    delayMicroseconds(200);
+  }
+  memsBBusy = false;
+}
+#endif
+
+// Blocking single-shot reads at 860 SPS (~1.2 ms each), once per sample.
+static Ads2Reading readAds2() {
+  Ads2Reading r = {NAN, NAN, NAN, NAN};
+  if (!ads2Ok) return r;
+#if HW_MEMS
+  finishMemsB();
+  if (memsBAcc.count > 0) r.memsBMv = (float)memsBAcc.sum / memsBAcc.count * ADS_MEMS_MV_PER_COUNT;
+  memsBAcc = {0, 0};
+  ads2.setDataRate(RATE_ADS1115_860SPS);
+#endif
+  ads2.setGain(GAIN_SIXTEEN);
+  int16_t a0 = ads2.readADC_SingleEnded(0);
+  int16_t a1 = ads2.readADC_SingleEnded(1);
+  ads2.setGain(GAIN_ONE);
+  int16_t a2 = ads2.readADC_SingleEnded(2);
+  r.ch4HtrMa = a0 * ADS2_SHUNT_MV_PER_COUNT / HEATER_SHUNT_OHM;
+  r.lpgHtrMa = a1 * ADS2_SHUNT_MV_PER_COUNT / HEATER_SHUNT_OHM;
+  r.railMv = a2 * ADS2_RAIL_MV_PER_COUNT * RAIL_RATIO;
+  return r;
+}
 
 struct AdsState {
   bool ok = false;           // chip present and answering
@@ -264,6 +528,10 @@ static void serviceAds(uint32_t nowMs) {
   }
 
   if (!adsState.busy) {
+#if HW_MEMS
+    // The MEMS tap (AIN3) is read at +/-2.048 V; the gain goes out with each request.
+    ads.setGain(adsState.channel == ADS_MEMS_A ? GAIN_TWO : GAIN_ONE);
+#endif
     ads.startADCReading(ADS_MUX[adsState.channel], /*continuous=*/false);
     adsState.startUs = micros();
     adsState.busy = true;
@@ -318,7 +586,8 @@ static void closeAdsWindow() {
   for (int i = 0; i < 4; i++) {
     AdsAccumulator &a = adsState.acc[i];
     if (a.count > 0) {
-      adsState.lastMv[i] = (float)a.sum / a.count * ADS_MV_PER_COUNT;
+      float mvPerCount = (HW_MEMS && i == ADS_MEMS_A) ? ADS_MEMS_MV_PER_COUNT : ADS_MV_PER_COUNT;
+      adsState.lastMv[i] = (float)a.sum / a.count * mvPerCount;
       adsState.haveMv[i] = true;
     }
     a = {0, 0};
@@ -423,12 +692,26 @@ static void startAdvertising() {
 }
 
 static void refreshInfo() {
-  char json[200];
-  snprintf(json, sizeof(json),
-           "{\"proto\":%u,\"fw\":\"%s\",\"board\":\"%s\",\"rl_ohm\":%lu,"
-           "\"tap_ratio\":%.1f,\"vc_mv\":%u,\"interval_ms\":%u,\"heater_mv\":%u}",
-           PROTO_VERSION, FW_VERSION, BOARD_ID, (unsigned long)RL_OHM, TAP_RATIO,
-           VC_MV, sampleIntervalMs.load(), lastHeaterMv.load());
+  // About 200 characters (MEMS rig about 235). The closing brace goes on last, so should
+  // it ever overflow the app gets invalid JSON rather than a silently cut-short object.
+  char json[320];
+  int n = snprintf(json, sizeof(json),
+                   "{\"proto\":%u,\"fw\":\"%s\",\"board\":\"%s\",\"rl_ohm\":%lu,"
+                   "\"tap_ratio\":%.1f,\"vc_mv\":%u,\"interval_ms\":%u,\"heater_mv\":%u,"
+                   "\"anomaly\":1,\"airflow\":%d,\"co\":%d,\"g_still\":%.4f,\"t_src\":%u",
+                   PROTO_VERSION, FW_VERSION, BOARD_ID, (unsigned long)RL_OHM, TAP_RATIO,
+                   VC_MV, sampleIntervalMs.load(), lastHeaterMv.load(), HW_AIRFLOW ? 1 : 0,
+                   HW_CO ? 1 : 0, (double)airflowGStill.load(), (unsigned)tSrcFlag.load());
+#if HW_MEMS
+  if (n > 0 && (size_t)n < sizeof(json)) {
+    n += snprintf(json + n, sizeof(json) - n, ",\"mems\":%u,\"mems_burnin_h\":%lu",
+                  (unsigned)memsBladeFlag.load(), (unsigned long)memsBurnH.load());
+  }
+#endif
+  if (n > 0 && (size_t)n + 1 < sizeof(json)) {
+    json[n] = '}';
+    json[n + 1] = '\0';
+  }
   infoChar->setValue(std::string(json));
 }
 
@@ -441,6 +724,11 @@ class ServerCallbacks : public NimBLEServerCallbacks {
   void onDisconnect(NimBLEServer *server, NimBLEConnInfo &info, int reason) override {
     bleConnected = false;
     notifyEnabled = false;
+    analysisNotify = false;
+    eventNotify = false;
+#if HW_MEMS
+    gas2Notify = false;
+#endif
     appLedColour = 0;  // the next client starts from dim cyan again
     startAdvertising();
   }
@@ -452,6 +740,29 @@ class SampleCallbacks : public NimBLECharacteristicCallbacks {
     notifyEnabled = (subValue & 0x0001) != 0;  // bit0 of the CCCD = notifications
   }
 };
+
+class AnalysisCallbacks : public NimBLECharacteristicCallbacks {
+  void onSubscribe(NimBLECharacteristic *chr, NimBLEConnInfo &info,
+                   uint16_t subValue) override {
+    analysisNotify = (subValue & 0x0001) != 0;
+  }
+};
+
+class EventCallbacks : public NimBLECharacteristicCallbacks {
+  void onSubscribe(NimBLECharacteristic *chr, NimBLEConnInfo &info,
+                   uint16_t subValue) override {
+    eventNotify = (subValue & 0x0001) != 0;
+  }
+};
+
+#if HW_MEMS
+class Gas2Callbacks : public NimBLECharacteristicCallbacks {
+  void onSubscribe(NimBLECharacteristic *chr, NimBLEConnInfo &info,
+                   uint16_t subValue) override {
+    gas2Notify = (subValue & 0x0001) != 0;
+  }
+};
+#endif
 
 class InfoCallbacks : public NimBLECharacteristicCallbacks {
   void onRead(NimBLECharacteristic *chr, NimBLEConnInfo &info) override {
@@ -477,6 +788,9 @@ class ControlCallbacks : public NimBLECharacteristicCallbacks {
         break;
       case OP_IDENTIFY:
         identifyRequested = true;
+        break;
+      case OP_CALIBRATE_AIRFLOW:
+        calibrateRequestS = (n >= 2 && d[1] > 0) ? d[1] : AIRFLOW_CAL_DEFAULT_S;
         break;
       case OP_SET_LED:
         if (n >= 4) {
@@ -507,6 +821,14 @@ static void initBle() {
   NimBLECharacteristic *ctrl = svc->createCharacteristic(
       UUID_CONTROL, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
   ctrl->setCallbacks(new ControlCallbacks());
+  analysisChar = svc->createCharacteristic(UUID_ANALYSIS, NIMBLE_PROPERTY::NOTIFY);
+  analysisChar->setCallbacks(new AnalysisCallbacks());
+  eventChar = svc->createCharacteristic(UUID_EVENT, NIMBLE_PROPERTY::NOTIFY);
+  eventChar->setCallbacks(new EventCallbacks());
+#if HW_MEMS
+  gas2Char = svc->createCharacteristic(UUID_GAS2, NIMBLE_PROPERTY::NOTIFY);
+  gas2Char->setCallbacks(new Gas2Callbacks());
+#endif
   refreshInfo();
 
   // Flags + the 128-bit service UUID take 21 of the 31 advertising bytes, so
@@ -543,7 +865,104 @@ static void stage(int i) { rtcStage[i] = millis(); }
 
 static const char *CSV_HEADER =
     "ms,seq,adc,ch4_tap_mv,lpg_tap_mv,ch4_vrl_mv,lpg_vrl_mv,ch4_rs_ohm,lpg_rs_ohm,"
-    "temp_c,humidity_pct,pressure_hpa,vbat_mv,heater_mv,flags,ble_conn,ble_notify";
+    "temp_c,humidity_pct,pressure_hpa,vbat_mv,heater_mv,flags,ble_conn,ble_notify,"
+    "airflow_raw,airflow_index,co_raw,ch4_res_mv,lpg_res_mv,ch4_sigma_mv,lpg_sigma_mv,"
+    "anomaly_ch4,anomaly_lpg,event_class,event_ratio,ch4_htr_ma,lpg_htr_ma,v3v3_mv,"
+    "case_temp_c,case_rh_pct"
+#if HW_MEMS
+    ",mems_a_tap_mv,mems_b_tap_mv,mems_a_rs_ohm,mems_b_rs_ohm,mems_a_res_mv,"
+    "mems_a_sigma_mv,mems_b_res_mv,mems_b_sigma_mv,anomaly_mems_a,anomaly_mems_b,mems_flags"
+#endif
+    ;
+
+// =================================================================================
+// Anomaly detector, airflow thermistor and CO module
+// =================================================================================
+static anom_state anomState;  // fixed size (~10 kB), no allocation
+static uint32_t heaterOnSinceMs = 0;  // when the heaters last came on (warm-up clock)
+static Preferences prefs;
+static anom_thermistor airflowBead = AIRFLOW_BEAD_DEFAULT;
+
+// Still-air calibration (opcode 0x04): average the bead's conductance.
+static bool calRunning = false;
+static uint32_t calEndMs = 0;
+static double calSum = 0;
+static uint32_t calCount = 0;
+
+static float readAdcOversampledMv(uint8_t pin, uint8_t n) {
+  uint32_t acc = 0;
+  for (uint8_t i = 0; i < n; i++) acc += analogReadMilliVolts(pin);
+  return (float)acc / n;
+}
+
+// Unheated reference thermistor temperature (degC) from its divider voltage.
+static float referenceTempC(float vMv) {
+  if (!(vMv > 10.0f) || !(vMv < airflowBead.supply_mv - 10.0f)) return NAN;
+  float r = REF_SERIES_OHM * vMv / (airflowBead.supply_mv - vMv);
+  return 1.0f / (1.0f / 298.15f + logf(r / REF_R25_OHM) / REF_BETA_K) - 273.15f;
+}
+
+#if HW_CO
+// Winsen ZE15-CO / ZE07-CO active-upload frame, one a second:
+//   FF 04 03 01 CH CL FH FL CS,  ppm = ((CH & 0x1F)*256 + CL) * 0.1,
+//   CS = (~(byte1 + ... + byte7)) + 1.
+// On the ZE15 bit 7 of CH is a sensor-fault flag; the ZE07 never sets it (its
+// 500 ppm full scale fits in the low 5 bits).
+static uint8_t coBuf[9];
+static uint8_t coLen = 0;
+static float coPpm = NAN;
+static uint32_t coLastMs = 0;
+
+static void serviceCo(uint32_t nowMs) {
+  while (Serial1.available()) {
+    uint8_t b = (uint8_t)Serial1.read();
+    if (coLen == 0 && b != 0xFF) continue;
+    coBuf[coLen++] = b;
+    if (coLen < 9) continue;
+    coLen = 0;
+    uint8_t sum = 0;
+    for (int i = 1; i < 8; i++) sum += coBuf[i];
+    uint8_t cs = (uint8_t)(~sum + 1);
+    if (coBuf[1] == 0x04 && cs == coBuf[8] && !(coBuf[4] & 0x80)) {
+      coPpm = (float)(((coBuf[4] & 0x1F) << 8) | coBuf[5]) * 0.1f;
+      coLastMs = nowMs;
+    }
+  }
+}
+#endif
+
+static int16_t clampI16(float v) {
+  if (!(v == v)) return INT16_MIN;
+  if (v > 32767.0f) return 32767;
+  if (v < -32767.0f) return -32767;
+  return (int16_t)lroundf(v);
+}
+
+#if HW_MEMS
+// MEMS sensor resistance (ohms) from its tap voltage, pull-up included (the app's
+// memsRsOhm). NAN when there is no solution (I1 <= 0 or VN >= VC) or no reading.
+static float memsRsOhm(float tapMv, float vcMv, float rOhm) {
+  if (!(tapMv == tapMv)) return NAN;
+  float i1 = tapMv / rOhm - (vcMv - tapMv) / MEMS_PULLUP_OHM;  // mA
+  if (!(i1 > 0.0f)) return NAN;
+  float vn = tapMv + rOhm * i1;
+  if (vn >= vcMv) return NAN;
+  return (vcMv - vn) / i1;
+}
+
+// Gas2 fields: 0xFFFF (u16) / 0x7FFF (i16) mean missing, so real values stop short.
+static uint16_t gas2U16(float v, bool ok) {
+  if (!ok || !(v == v)) return 0xFFFF;
+  uint16_t u = clampU16(v);
+  return u == 0xFFFF ? 0xFFFE : u;
+}
+static uint16_t gas2I16(float v, bool ok) {
+  if (!ok || !(v == v)) return 0x7FFF;
+  if (v > 32766.0f) v = 32766.0f;
+  if (v < -32768.0f) v = -32768.0f;
+  return (uint16_t)(int16_t)lroundf(v);
+}
+#endif
 
 // Low-battery heater cutoff. HTR_EN (GPIO7) is the boost enable with a 100k
 // pull-down on the board: HIGH = heaters on, LOW = heaters off. Heaters go
@@ -555,11 +974,73 @@ static bool heatersEnabled = false;  // set once setup() has driven HTR_EN high
 static uint32_t vbatLowSinceMs = 0;
 static bool vbatLowTiming = false;
 
+#if HW_MEMS
+// MEMS blade heaters (PIN_MEMS_HTR_EN, 100k pull-down: off until driven HIGH).
+// They run from +5V_HTR, so they only get power while HTR_EN is high anyway; the pin
+// still goes low whenever HTR_EN does. On again MEMS_STAGGER_MS after HTR_EN comes back
+// (heaterOnSinceMs), so the boost never starts into all four heaters at once.
+static bool memsBlade = false;            // blade fitted (tap test)
+static bool memsHeaterOn = false;
+static uint32_t memsHeaterOnSinceMs = 0;  // MEMS warm-up clock
+// Burn-in: cumulative MEMS heater-on time, kept in NVS ("mems_burn_s").
+static uint32_t memsBurnS = 0;
+static uint32_t memsBurnRemMs = 0;
+static uint32_t memsBurnSavedS = 0;
+static uint32_t memsBurnSaveMs = 0;
+static uint32_t memsBurnLastMs = 0;
+
+static void setMemsHeater(bool on, uint32_t nowMs) {
+  if (on == memsHeaterOn) return;
+  memsHeaterOn = on;
+  digitalWrite(PIN_MEMS_HTR_EN, on ? HIGH : LOW);
+  if (on) memsHeaterOnSinceMs = nowMs;
+  Serial.printf("MEMS heaters %s.\n", on ? "on" : "off");
+}
+
+// Tap test: fitted <=> both taps below MEMS_BLADE_MAX_MV. A missing reading keeps the
+// last answer rather than dropping the heaters (and the hour of warm-up) on an I2C hiccup.
+static void updateMemsBlade(float aMv, float bMv) {
+  if (!(aMv == aMv) || !(bMv == bMv)) return;
+  bool fitted = aMv < MEMS_BLADE_MAX_MV && bMv < MEMS_BLADE_MAX_MV;
+  if (fitted == memsBlade) return;
+  memsBlade = fitted;
+  memsBladeFlag = fitted ? 1 : 0;
+  Serial.printf("MEMS blade %s (taps %.0f / %.0f mV).\n", fitted ? "fitted" : "not fitted",
+                (double)aMv, (double)bMv);
+  if (infoChar) refreshInfo();
+}
+
+// Once per sample, after the low-battery cutoff and the blade check.
+static void serviceMemsHeater(uint32_t nowMs) {
+  if (memsHeaterOn) {
+    memsBurnRemMs += nowMs - memsBurnLastMs;
+    memsBurnS += memsBurnRemMs / 1000;
+    memsBurnRemMs %= 1000;
+  }
+  memsBurnLastMs = nowMs;
+  memsBurnH = memsBurnS / 3600;
+  if (memsBurnS != memsBurnSavedS && nowMs - memsBurnSaveMs >= MEMS_BURNIN_SAVE_MS) {
+    prefs.putUInt("mems_burn_s", memsBurnS);
+    memsBurnSavedS = memsBurnS;
+    memsBurnSaveMs = nowMs;
+  }
+  bool figaroOn = heatersEnabled && !heatersOffLowBatt;
+  setMemsHeater(figaroOn && memsBlade &&
+                    (int32_t)(nowMs - heaterOnSinceMs) >= (int32_t)MEMS_STAGGER_MS,
+                nowMs);
+}
+#endif
+
 static void driveHeaterPin() {
   digitalWrite(PIN_HTR_EN, (heatersEnabled && !heatersOffLowBatt) ? HIGH : LOW);
+#if HW_MEMS
+  if (!(heatersEnabled && !heatersOffLowBatt)) setMemsHeater(false, 0);
+#endif
 }
 
 static void setHeatersOff(bool off) {
+  // Heaters coming back on start the warm-up clock again (the elements are cold).
+  if (heatersOffLowBatt && !off) heaterOnSinceMs = millis();
   heatersOffLowBatt = off;
   driveHeaterPin();
 }
@@ -617,15 +1098,19 @@ static void emitSample(uint32_t nowMs) {
     flags |= FLAG_ADS_OK;
     ch4Mv = adsState.lastMv[ADS_CH4];
     lpgMv = adsState.lastMv[ADS_LPG];
-    if (adsState.haveMv[ADS_VBAT]) vbatMv = clampU16(adsState.lastMv[ADS_VBAT] * VBAT_RATIO);
   } else {
-    ch4Mv = readFallbackMv(PIN_CH4_ADC_FB);
-    lpgMv = readFallbackMv(PIN_LPG_ADC_FB);
+    // GPIO1/2 read VBAT and the heater rail, so there is no fallback gas reading.
+    ch4Mv = 0.0f;
+    lpgMv = 0.0f;
   }
+  // VBAT and the heater rail are on the ESP32's own ADC, always available.
+  vbatMv = clampU16(readFallbackMv(PIN_VBAT_ADC) * VBAT_RATIO);
+  bool heaterKnown = true;
+  float heaterRailMv = readFallbackMv(PIN_HTR_ADC) * HEATER_RATIO;
   updateHeaterCutoff(nowMs, vbatMv, digitalRead(PIN_PGOOD_N) == LOW);
   if (heatersOffLowBatt) flags |= FLAG_HEATERS_OFF;
-  if (fromAds && adsState.haveMv[ADS_HEATER]) {
-    heaterMv = clampU16(adsState.lastMv[ADS_HEATER] * HEATER_RATIO);
+  if (heaterKnown) {
+    heaterMv = clampU16(heaterRailMv);
     // A dead rail is expected while we hold the heaters off; not a fault.
     if (heatersEnabled && !heatersOffLowBatt &&
         (heaterMv < HEATER_MIN_MV || heaterMv > HEATER_MAX_MV)) {
@@ -633,6 +1118,23 @@ static void emitSample(uint32_t nowMs) {
     }
   }
   lastHeaterMv = heaterMv;
+
+  Ads2Reading a2 = readAds2();
+  // The thermistor dividers run from +3V3: use the measured rail when we have it.
+  airflowBead.supply_mv = (a2.railMv > 2900.0f && a2.railMv < 3700.0f) ? a2.railMv : 3300.0f;
+#if HW_MEMS
+  // MEMS blade: window-mean taps (mV at the ADC pin), blade check, heaters, and Rs
+  // against the measured 3V3 rail.
+  float memsAMv = (adsState.ok && adsState.haveMv[ADS_MEMS_A]) ? adsState.lastMv[ADS_MEMS_A] : NAN;
+  float memsBMv = a2.memsBMv;
+  updateMemsBlade(memsAMv, memsBMv);
+  serviceMemsHeater(nowMs);
+  bool memsWarm = memsHeaterOn && (int32_t)(nowMs - memsHeaterOnSinceMs) >= (int32_t)MEMS_WARMUP_MS;
+  bool memsBurnedIn = memsBurnS >= (uint32_t)MEMS_BURNIN_H * 3600u;
+  float memsVcMv = (a2.railMv > 2900.0f && a2.railMv < 3700.0f) ? a2.railMv : MEMS_VC_FALLBACK_MV;
+  float memsARs = memsRsOhm(memsAMv, memsVcMv, MEMS_A_R_OHM);
+  float memsBRs = memsRsOhm(memsBMv, memsVcMv, MEMS_B_R_OHM);
+#endif
 
   // Environment. NaN or physically implausible readings are sent as missing.
   // The board has no pressure sensor, so pressure is always missing.
@@ -643,6 +1145,37 @@ static void emitSample(uint32_t nowMs) {
       t = temp.temperature;
       h = hum.relative_humidity;
     }
+  }
+  // The on-board SHT40 reads the air inside the case, warmed by the heaters. Better
+  // sources supply "the" temperature and humidity when present, and the on-board
+  // reading is logged as the case reading (see tSrcFlag):
+  //   2  the air blade: an SHT40 out in the air at the inlet;
+  //   1  the reference thermistor out in the air (HW_AIRFLOW_REF) for the temperature,
+  //      with the case air's water content (absolute humidity, which warming does not
+  //      change) re-expressed as RH at that temperature.
+  float caseT = t, caseH = h;
+  float refC = NAN;
+  uint8_t tSrc = 0;
+  if (shtBladeReady) {
+    float bt, bh;
+    if (readBladeSht(&bt, &bh)) {
+      t = bt;
+      h = bh;
+      tSrc = 2;
+    }
+  }
+#if HW_AIRFLOW_REF
+  refC = (fromAds && adsState.haveMv[ADS_TH_REF]) ? referenceTempC(adsState.lastMv[ADS_TH_REF]) : NAN;
+  if (tSrc == 0 && refC >= -30.0f && refC <= 70.0f && caseT == caseT && caseH == caseH) {
+    float rh = 100.0f * anom_abs_humidity(caseT, caseH) / anom_abs_humidity(refC, 100.0f);
+    t = refC;
+    h = rh > 100.0f ? 100.0f : rh;
+    tSrc = 1;
+  }
+#endif
+  if (tSrc != tSrcFlag.load()) {
+    tSrcFlag = tSrc;
+    if (infoChar) refreshInfo();
   }
   bool tOk = t >= -40.0f && t <= 125.0f;
   bool hOk = h >= 0.0f && h <= 100.0f;
@@ -658,9 +1191,151 @@ static void emitSample(uint32_t nowMs) {
     markPending = false;
   }
 
+  // ---- Airflow thermistor and CO ------------------------------------------------
+  float airflowRawMv = 0.0f, airflowIdx = 0.0f;
+  uint8_t airflowOk = 0;
+#if HW_AIRFLOW
+  airflowRawMv = (fromAds && adsState.haveMv[ADS_TH_HOT]) ? adsState.lastMv[ADS_TH_HOT] : 0.0f;
+  // Ambient for the heated thermistor: the air blade's SHT40 right beside it, else the
+  // reference thermistor, else the on-board SHT40.
+  float ambientC = t;
+#if HW_AIRFLOW_REF
+  if (tSrc != 2) ambientC = refC;
+#endif
+  if (ambientC == ambientC) {
+    airflowBead.g_still_mw_k = airflowGStill.load();
+    airflowIdx = anom_airflow_index(&airflowBead, airflowRawMv, ambientC, &airflowOk);
+    uint8_t gOk = 0;
+    float g = anom_thermistor_conductance(&airflowBead, airflowRawMv, ambientC, &gOk);
+    uint8_t req = calibrateRequestS.exchange(0);
+    if (req) {
+      calRunning = true;
+      calEndMs = nowMs + (uint32_t)req * 1000u;
+      calSum = 0;
+      calCount = 0;
+      Serial.printf("Airflow still-air calibration for %u s: keep the board in still air.\n", req);
+    }
+    if (calRunning) {
+      if (gOk) {
+        calSum += g;
+        calCount++;
+      }
+      if ((int32_t)(nowMs - calEndMs) >= 0) {
+        calRunning = false;
+        if (calCount > 0) {
+          float gStill = (float)(calSum / calCount);
+          airflowGStill = gStill;
+          prefs.putFloat("g_still", gStill);
+          refreshInfo();
+          Serial.printf("Airflow still-air conductance %.4f mW/K from %lu samples (saved).\n",
+                        (double)gStill, (unsigned long)calCount);
+        } else {
+          Serial.println("Airflow calibration failed: no usable thermistor readings.");
+        }
+      }
+    }
+  }
+#else
+  calibrateRequestS = 0;
+#endif
+  float coPpmNow = NAN;
+#if HW_CO
+  if (coLastMs != 0 && nowMs - coLastMs <= CO_STALE_MS) coPpmNow = coPpm;
+#endif
+
+  // ---- Anomaly detector ------------------------------------------------------------
+  anom_input ain = {};
+  ain.t_ms = nowMs;
+  ain.gas_mv[ANOM_CH4] = ch4Mv * TAP_RATIO;  // VRL, as the app logs it
+  ain.gas_mv[ANOM_LPG] = lpgMv * TAP_RATIO;
+  ain.temp_c = tOk ? t : 0.0f;
+  ain.rh_pct = hOk ? h : 0.0f;
+  ain.airflow_index = airflowIdx;
+  ain.airflow_ok = airflowOk;
+  ain.co_ok = (coPpmNow == coPpmNow) ? 1 : 0;
+  ain.co_ppm = ain.co_ok ? coPpmNow : 0.0f;
+  bool heatersRunning = heatersEnabled && !heatersOffLowBatt;
+  ain.valid = fromAds && tOk && hOk && heatersRunning && nowMs - heaterOnSinceMs >= WARMUP_MS;
+#if HW_MEMS
+  // MEMS channels in the same units as the Figaros (VRL = 2 x tap). Each counts only with
+  // the blade fitted, its heaters on and past warm-up, and a reading this sample.
+  bool memsOk = memsBlade && memsHeaterOn && memsWarm;
+  ain.gas_mv[ANOM_MEMS_A] = memsAMv == memsAMv ? memsAMv * MEMS_TAP_RATIO : 0.0f;
+  ain.gas_mv[ANOM_MEMS_B] = memsBMv == memsBMv ? memsBMv * MEMS_TAP_RATIO : 0.0f;
+  if (memsOk && memsAMv == memsAMv) ain.ch_valid |= 1 << ANOM_MEMS_A;
+  if (memsOk && memsBMv == memsBMv) ain.ch_valid |= 1 << ANOM_MEMS_B;
+#endif
+  anom_output aout;
+  anom_step(&anomState, &ain, &aout);
+#if HW_MEMS
+  bool memsAReady = ain.valid && (ain.ch_valid & (1 << ANOM_MEMS_A)) && aout.ch_ready[ANOM_MEMS_A];
+  bool memsBReady = ain.valid && (ain.ch_valid & (1 << ANOM_MEMS_B)) && aout.ch_ready[ANOM_MEMS_B];
+  uint8_t memsFlags = 0;
+  if (aout.anomaly[ANOM_MEMS_A]) memsFlags |= 1 << 0;
+  if (aout.anomaly[ANOM_MEMS_B]) memsFlags |= 1 << 1;
+  if (memsBlade) memsFlags |= 1 << 2;
+  if (memsHeaterOn) memsFlags |= 1 << 3;
+  if (memsWarm) memsFlags |= 1 << 4;
+  if (memsBurnedIn) memsFlags |= 1 << 5;
+#endif
+
+  uint8_t aflags = 0;
+  if (aout.anomaly[ANOM_CH4]) aflags |= 1 << 0;
+  if (aout.anomaly[ANOM_LPG]) aflags |= 1 << 1;
+  if (aout.ready) aflags |= 1 << 2;
+  if (aout.suppressed) aflags |= 1 << 3;
+  if (aout.event_open) aflags |= 1 << 4;
+  if (airflowOk) aflags |= 1 << 5;
+  if (ain.co_ok) aflags |= 1 << 6;
+  if (calRunning) aflags |= 1 << 7;
+  bool aValid = ain.valid && aout.ready;
+
+  bool linkUp = bleConnected.load();
+  if (aout.event_closed && linkUp && eventNotify.load()) {
+    const anom_event &e = aout.event;
+    uint8_t ep[EVENT_PACKET_LEN];
+    ep[0] = ANALYSIS_VERSION;
+    putU16(ep + 1, e.id);
+    ep[3] = (uint8_t)e.cls;
+    ep[4] = e.confidence;
+    putU16(ep + 5, clampU16((float)(e.t_end_ms - e.t_start_ms) / 100.0f));
+    putU16(ep + 7, (uint16_t)clampI16(e.peak_res_mv[ANOM_CH4] * 10.0f));
+    putU16(ep + 9, (uint16_t)clampI16(e.peak_res_mv[ANOM_LPG] * 10.0f));
+    putU16(ep + 11, clampU16(e.ratio * 100.0f));
+    putU16(ep + 13, (uint16_t)(e.lead_known ? clampI16(e.lead_s * 10.0f) : INT16_MIN));
+    putU16(ep + 15, (uint16_t)(e.airflow_known ? clampI16(e.airflow_mean * 1000.0f) : INT16_MIN));
+    putU16(ep + 17, (uint16_t)(e.co_known ? clampI16(e.co_peak_ppm * 10.0f) : INT16_MIN));
+    ep[19] = (uint8_t)((e.raised[ANOM_CH4] ? 1 : 0) | (e.raised[ANOM_LPG] ? 2 : 0) |
+                       (e.detected[ANOM_CH4] ? 4 : 0) | (e.detected[ANOM_LPG] ? 8 : 0) |
+                       (e.thermal ? 16 : 0) | (e.low_airflow ? 32 : 0));
+    eventChar->notify(ep, sizeof(ep));
+  }
+  if (linkUp && analysisNotify.load()) {
+    uint8_t ap[ANALYSIS_PACKET_LEN];
+    ap[0] = ANALYSIS_VERSION;
+    putU16(ap + 1, seq);
+    putU16(ap + 3, (uint16_t)(aValid ? clampI16(aout.res_mv[ANOM_CH4] * 10.0f) : INT16_MIN));
+    putU16(ap + 5, (uint16_t)(aValid ? clampI16(aout.res_mv[ANOM_LPG] * 10.0f) : INT16_MIN));
+    putU16(ap + 7, aValid ? clampU16(aout.sigma_mv[ANOM_CH4] * 100.0f) : 0);
+    putU16(ap + 9, aValid ? clampU16(aout.sigma_mv[ANOM_LPG] * 100.0f) : 0);
+    putU16(ap + 11, clampU16(airflowRawMv));
+    putU16(ap + 13, (uint16_t)(airflowOk ? clampI16(airflowIdx * 1000.0f) : INT16_MIN));
+    uint16_t coRaw = 0xFFFF;
+    if (ain.co_ok) {
+      coRaw = clampU16(coPpmNow * 10.0f);
+      if (coRaw == 0xFFFF) coRaw = 0xFFFE;
+    }
+    putU16(ap + 15, coRaw);
+    ap[17] = aflags;
+    ap[18] = aout.event_closed ? (uint8_t)aout.event.cls : 0;
+    long r10 = aout.event_closed ? lroundf(aout.event.ratio * 10.0f) : 0;
+    ap[19] = (uint8_t)(r10 > 255 ? 255 : r10);
+    analysisChar->notify(ap, sizeof(ap));
+  }
+
   // 20-byte little-endian packet, layout per docs/phone_board.md.
   uint8_t pkt[SAMPLE_PACKET_LEN];
-  pkt[0] = PROTO_VERSION;
+  pkt[0] = SAMPLE_VERSION;
   putU16(pkt + 1, seq);
   putU32(pkt + 3, nowMs);
   putU16(pkt + 7, clampU16(ch4Mv * 10.0f));  // 0.1 mV
@@ -675,12 +1350,31 @@ static void emitSample(uint32_t nowMs) {
     sampleChar->notify(pkt, sizeof(pkt));
   }
 
+#if HW_MEMS
+  // Gas2: the MEMS half of this sample, same seq, right after the Sample packet.
+  if (bleConnected.load() && gas2Notify.load()) {
+    uint8_t gp[GAS2_PACKET_LEN];
+    gp[0] = GAS2_VERSION;
+    putU16(gp + 1, seq);
+    putU16(gp + 3, gas2U16(memsAMv * 10.0f, true));  // 0.1 mV
+    putU16(gp + 5, gas2U16(memsBMv * 10.0f, true));
+    putU16(gp + 7, gas2I16(aout.res_mv[ANOM_MEMS_A] * 10.0f, memsAReady));
+    putU16(gp + 9, gas2U16(aout.sigma_mv[ANOM_MEMS_A] * 10.0f, memsAReady));
+    putU16(gp + 11, gas2I16(aout.res_mv[ANOM_MEMS_B] * 10.0f, memsBReady));
+    putU16(gp + 13, gas2U16(aout.sigma_mv[ANOM_MEMS_B] * 10.0f, memsBReady));
+    gp[15] = memsFlags;
+    putU16(gp + 16, gas2U16(a2.railMv, true));
+    putU16(gp + 18, 0);  // reserved
+    gas2Char->notify(gp, sizeof(gp));
+  }
+#endif
+
   // Bench CSV. Rs uses the nominal VC, as the app does with vc_mv from Info.
   if (Serial) {
     float ch4Vrl = ch4Mv * TAP_RATIO, lpgVrl = lpgMv * TAP_RATIO;
     float ch4Rs = ch4Vrl > 1.0f ? RL_OHM * (VC_MV - ch4Vrl) / ch4Vrl : NAN;
     float lpgRs = lpgVrl > 1.0f ? RL_OHM * (VC_MV - lpgVrl) / lpgVrl : NAN;
-    char row[220];
+    char row[HW_MEMS ? 600 : 440];  // the MEMS rig adds up to ~95 characters
     int n = snprintf(row, sizeof(row), "%lu,%u,%s,%.1f,%.1f,%.0f,%.0f,%.0f,%.0f,",
                      (unsigned long)nowMs, seq, fromAds ? "ads" : "esp", ch4Mv, lpgMv,
                      ch4Vrl, lpgVrl, ch4Rs, lpgRs);
@@ -689,8 +1383,62 @@ static void emitSample(uint32_t nowMs) {
     if (hOk) n += snprintf(row + n, sizeof(row) - n, "%.2f", h);
     n += snprintf(row + n, sizeof(row) - n, ",");
     if (pOk) n += snprintf(row + n, sizeof(row) - n, "%.1f", p);
-    snprintf(row + n, sizeof(row) - n, ",%u,%u,0x%02X,%d,%d", vbatMv, heaterMv, flags,
-             bleConnected.load() ? 1 : 0, notifyEnabled.load() ? 1 : 0);
+    n += snprintf(row + n, sizeof(row) - n, ",%u,%u,0x%02X,%d,%d", vbatMv, heaterMv, flags,
+                  bleConnected.load() ? 1 : 0, notifyEnabled.load() ? 1 : 0);
+    // Detector fields; blank where unknown.
+    n += snprintf(row + n, sizeof(row) - n, ",");
+    if (HW_AIRFLOW) n += snprintf(row + n, sizeof(row) - n, "%.1f", (double)airflowRawMv);
+    n += snprintf(row + n, sizeof(row) - n, ",");
+    if (airflowOk) n += snprintf(row + n, sizeof(row) - n, "%.3f", (double)airflowIdx);
+    n += snprintf(row + n, sizeof(row) - n, ",");
+    if (ain.co_ok) n += snprintf(row + n, sizeof(row) - n, "%.1f", (double)coPpmNow);
+    if (aValid) {
+      n += snprintf(row + n, sizeof(row) - n, ",%.1f,%.1f,%.2f,%.2f",
+                    (double)aout.res_mv[ANOM_CH4], (double)aout.res_mv[ANOM_LPG],
+                    (double)aout.sigma_mv[ANOM_CH4], (double)aout.sigma_mv[ANOM_LPG]);
+    } else {
+      n += snprintf(row + n, sizeof(row) - n, ",,,,");
+    }
+    n += snprintf(row + n, sizeof(row) - n, ",%d,%d,%s,", aout.anomaly[ANOM_CH4],
+                  aout.anomaly[ANOM_LPG], aout.event_closed ? anom_class_name(aout.event.cls) : "");
+    if (aout.event_closed) n += snprintf(row + n, sizeof(row) - n, "%.2f", (double)aout.event.ratio);
+    n += snprintf(row + n, sizeof(row) - n, ",");
+    if (a2.ch4HtrMa == a2.ch4HtrMa) n += snprintf(row + n, sizeof(row) - n, "%.3f", (double)a2.ch4HtrMa);
+    n += snprintf(row + n, sizeof(row) - n, ",");
+    if (a2.lpgHtrMa == a2.lpgHtrMa) n += snprintf(row + n, sizeof(row) - n, "%.3f", (double)a2.lpgHtrMa);
+    n += snprintf(row + n, sizeof(row) - n, ",");
+    if (a2.railMv == a2.railMv) n += snprintf(row + n, sizeof(row) - n, "%.1f", (double)a2.railMv);
+    // Case reading: the on-board SHT40, when something else supplies temp_c.
+    bool airSep = tSrc != 0;
+    n += snprintf(row + n, sizeof(row) - n, ",");
+    if (airSep && caseT == caseT) n += snprintf(row + n, sizeof(row) - n, "%.2f", (double)caseT);
+    n += snprintf(row + n, sizeof(row) - n, ",");
+    if (airSep && caseH == caseH) n += snprintf(row + n, sizeof(row) - n, "%.2f", (double)caseH);
+#if HW_MEMS
+    // MEMS blade columns, at the end so older parsers keep working.
+    n += snprintf(row + n, sizeof(row) - n, ",");
+    if (memsAMv == memsAMv) n += snprintf(row + n, sizeof(row) - n, "%.1f", (double)memsAMv);
+    n += snprintf(row + n, sizeof(row) - n, ",");
+    if (memsBMv == memsBMv) n += snprintf(row + n, sizeof(row) - n, "%.1f", (double)memsBMv);
+    n += snprintf(row + n, sizeof(row) - n, ",");
+    if (memsARs == memsARs) n += snprintf(row + n, sizeof(row) - n, "%.0f", (double)memsARs);
+    n += snprintf(row + n, sizeof(row) - n, ",");
+    if (memsBRs == memsBRs) n += snprintf(row + n, sizeof(row) - n, "%.0f", (double)memsBRs);
+    if (memsAReady) {
+      n += snprintf(row + n, sizeof(row) - n, ",%.1f,%.2f", (double)aout.res_mv[ANOM_MEMS_A],
+                    (double)aout.sigma_mv[ANOM_MEMS_A]);
+    } else {
+      n += snprintf(row + n, sizeof(row) - n, ",,");
+    }
+    if (memsBReady) {
+      n += snprintf(row + n, sizeof(row) - n, ",%.1f,%.2f", (double)aout.res_mv[ANOM_MEMS_B],
+                    (double)aout.sigma_mv[ANOM_MEMS_B]);
+    } else {
+      n += snprintf(row + n, sizeof(row) - n, ",,");
+    }
+    snprintf(row + n, sizeof(row) - n, ",%d,%d,0x%02X", aout.anomaly[ANOM_MEMS_A],
+             aout.anomaly[ANOM_MEMS_B], memsFlags);
+#endif
     Serial.println(row);
   }
 
@@ -709,6 +1457,7 @@ void setup() {
   pinMode(PIN_HTR_EN, OUTPUT);
   heatersEnabled = true;
   rtcHeaterOnMs = millis();
+  heaterOnSinceMs = rtcHeaterOnMs;
   delay(HEATER_SETTLE_MS);
 
   Serial.begin(115200);
@@ -727,12 +1476,30 @@ void setup() {
   pinMode(PIN_CHG_N, INPUT);  // external 10k pull-ups
   pinMode(PIN_PGOOD_N, INPUT);
   pinMode(PIN_ADS_RDY, INPUT);
+#if HW_MEMS
+  // MEMS heaters stay off (the pull-down already holds them) until the blade check and
+  // the stagger say otherwise.
+  digitalWrite(PIN_MEMS_HTR_EN, LOW);
+  pinMode(PIN_MEMS_HTR_EN, OUTPUT);
+#endif
 
   ledWrite(0, 0, LED_BREATHE_MIN);
 
   analogReadResolution(12);
-  analogSetPinAttenuation(PIN_CH4_ADC_FB, ADC_11db);
-  analogSetPinAttenuation(PIN_LPG_ADC_FB, ADC_11db);
+  analogSetPinAttenuation(PIN_VBAT_ADC, ADC_11db);
+  analogSetPinAttenuation(PIN_HTR_ADC, ADC_11db);
+
+  anom_init(&anomState);
+  prefs.begin("anom", false);
+  airflowGStill = prefs.getFloat("g_still", 0.0f);
+#if HW_MEMS
+  memsBurnS = prefs.getUInt("mems_burn_s", 0);
+  memsBurnSavedS = memsBurnS;
+  memsBurnH = memsBurnS / 3600;
+#endif
+#if HW_CO
+  Serial1.begin(CO_BAUD, SERIAL_8N1, PIN_CO_RX, PIN_CO_TX);
+#endif
 
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
   Wire.setClock(I2C_CLOCK_HZ);
@@ -764,12 +1531,42 @@ void setup() {
   stage(0);
   stage(1);
 
+  ads2Ok = ads2.begin(ADS2_ADDR, &Wire);
+  if (ads2Ok) {
+    ads2.setDataRate(RATE_ADS1115_860SPS);
+    Serial.println("ADS1115 #2 ready at 0x49 (heater currents, 3V3 rail).");
+  } else {
+    Serial.println("ADS1115 #2 (0x49) not found; heater currents not logged.");
+  }
   if (probeAds()) {
     Serial.println("ADS1115 ready at 0x48 (250 SPS, +/-4.096 V).");
   } else {
     adsState.lastProbeMs = millis();
     Serial.println("ADS1115 not found; taps from ESP32 ADC fallback (GPIO1/2).");
   }
+#if HW_MEMS
+  // Blade check with the MEMS heaters still off (fitted: mems_a ~15-35 mV, mems_b
+  // ~150-300 mV; no blade: both at full scale). Rechecked on every sample.
+  {
+    float bootA = NAN, bootB = NAN;
+    if (adsState.ok) {
+      ads.setGain(GAIN_TWO);
+      int16_t raw = ads.readADC_SingleEnded(ADS_MEMS_A);
+      ads.setGain(GAIN_ONE);
+      bootA = (raw < 0 ? 0 : raw) * ADS_MEMS_MV_PER_COUNT;
+    }
+    if (ads2Ok) {
+      ads2.setGain(GAIN_TWO);
+      int16_t raw = ads2.readADC_SingleEnded(3);
+      bootB = (raw < 0 ? 0 : raw) * ADS_MEMS_MV_PER_COUNT;
+    }
+    updateMemsBlade(bootA, bootB);
+    if (!memsBlade) {
+      Serial.printf("MEMS blade not detected (taps %.0f / %.0f mV); MEMS heaters stay off.\n",
+                    (double)bootA, (double)bootB);
+    }
+  }
+#endif
   stage(2);
 
   if (sht4.begin(&Wire)) {
@@ -781,6 +1578,15 @@ void setup() {
     Serial.printf("SHT40 ready at 0x44 (serial 0x%08lX).\n", (unsigned long)sht4.readSerial());
   } else {
     Serial.println("SHT40 not found (0x44); environment fields sent as missing.");
+  }
+  for (uint8_t a : SHT_BLADE_ADDRS) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() == 0) {
+      shtBladeAddr = a;
+      shtBladeReady = true;
+      Serial.printf("Air blade SHT40 found at 0x%02X: it supplies temp/humidity; on-board = case reading.\n", a);
+      break;
+    }
   }
   stage(3);
 
@@ -816,6 +1622,12 @@ void loop() {
 
   serviceButton(nowMs);
   serviceAds(nowMs);
+#if HW_MEMS
+  serviceMemsB();
+#endif
+#if HW_CO
+  serviceCo(nowMs);
+#endif
   serviceLed(nowMs);
 
   // Apply a newly shortened interval now rather than after the old deadline.

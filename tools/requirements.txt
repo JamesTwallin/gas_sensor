@@ -8,3 +8,7 @@ numpy>=1.23
 matplotlib>=3.6
 imageio-ffmpeg>=0.4.9
 contextily>=1.2.0
+# tools/replay.py and tools/aggregate.py (the anomaly detector replay):
+tabulate>=0.9
+# Host C compiler for `python tools/replay.py parity` (zig cc, no other toolchain needed)
+ziglang>=0.11
